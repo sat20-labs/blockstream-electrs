@@ -76,4 +76,4 @@ rev = "d3792352992a539afffbe11501d1aff9fd5b919d" # add-peer branch
 # as well as for https://github.com/ElementsProject/rust-elements/pull/98 until a new release is made
 [patch.crates-io.elements]
 git = "https://github.com/shesek/rust-elements"
-rev = "40d25acd032f0ba5a3a7f54f391801b479b39dba"
+rev = "0e1656fc38df86f1b4833cf7adc6dc259022a44a"
