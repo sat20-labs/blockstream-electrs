@@ -502,22 +502,24 @@ impl Connection {
     }
 
     fn log_rpc_event(&self, entries: &Vec<(&str, Value)>) {
-        let mut log = json!({});
+        if let Some(_) = self.rpc_logging {
+            let mut log = json!({});
 
-        if let Some(log_map) = log.as_object_mut() {
-            entries.into_iter().for_each(|e| {
-                log_map.insert(e.0.to_string(), e.1.clone());
-            });
-            log_map.insert(
-                "source".to_string(),
-                json!({
-                    "ip": self.addr.ip().to_string(),
-                    "port": self.addr.port(),
-                }),
-            );
+            if let Some(log_map) = log.as_object_mut() {
+                entries.into_iter().for_each(|e| {
+                    log_map.insert(e.0.to_string(), e.1.clone());
+                });
+                log_map.insert(
+                    "source".to_string(),
+                    json!({
+                        "ip": self.addr.ip().to_string(),
+                        "port": self.addr.port(),
+                    }),
+                );
+            }
+
+            info!("{}", log);
         }
-
-        info!("{}", log);
     }
 
     fn send_values(&mut self, values: &[Value]) -> Result<()> {
