@@ -557,19 +557,22 @@ impl Connection {
                             );
 
                             let reply = self.handle_command(method, params, id)?;
+                            let reply_length = reply.to_string().as_bytes().len();
+
+                            let send_result = self.send_values(&[reply]);
 
                             conditionally_log_rpc_event!(
                                 self,
                                 json!({
                                     "event": "rpc response",
                                     "method": method,
-                                    "payload_size": reply.to_string().as_bytes().len(),
+                                    "payload_size": reply_length,
                                     "duration_micros": start_time.elapsed().as_micros(),
                                     "id": id,
                                 })
                             );
 
-                            self.send_values(&[reply])?
+                            send_result?
                         }
                         _ => {
                             bail!("invalid command: {}", cmd)
@@ -617,6 +620,7 @@ impl Connection {
 
     pub fn run(mut self) {
         self.stats.clients.inc();
+        let connection_duration = Instant::now();
         conditionally_log_rpc_event!(self, json!({ "event": "connection established" }));
 
         let reader = BufReader::new(self.stream.try_clone().expect("failed to clone TcpStream"));
@@ -635,9 +639,11 @@ impl Connection {
             .sub(self.status_hashes.len() as i64);
 
         debug!("[{}] shutting down connection", self.addr);
-        conditionally_log_rpc_event!(self, json!({ "event": "connection closed" }));
-
         let _ = self.stream.shutdown(Shutdown::Both);
+
+        conditionally_log_rpc_event!(self, json!({ "event": "connection closed",
+        "duration_micros": connection_duration.elapsed().as_micros(),}));
+
         if let Err(err) = child.join().expect("receiver panicked") {
             error!("[{}] receiver failed: {}", self.addr, err);
         }
