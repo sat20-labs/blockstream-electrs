@@ -2,6 +2,7 @@ extern crate error_chain;
 #[macro_use]
 extern crate log;
 
+
 extern crate electrs;
 
 use error_chain::ChainedError;
@@ -116,6 +117,7 @@ fn run_server(config: Arc<Config>) -> Result<()> {
     let electrum_server = ElectrumRPC::start(Arc::clone(&config), Arc::clone(&query), &metrics);
 
     loop {
+        trace!("signal.wait");
         if let Err(err) = signal.wait(Duration::from_secs(5), true) {
             info!("stopping server: {}", err);
             rest_server.stop();
@@ -123,19 +125,16 @@ fn run_server(config: Arc<Config>) -> Result<()> {
             break;
         }
 
-        debug!("checking for new blocks, current_tip={}", tip);
-
+        trace!("calling getbestblockhash my tip={}", tip);
         // Index new blocks
         let current_tip = daemon.getbestblockhash()?;
 
-        debug!("new blockhash from bitcoind={}", current_tip);
-
         if current_tip != tip {
-            debug!("updating index to {}", current_tip);
+            trace!("retrieved NEW blockhash bitcoind new={}", current_tip);
             indexer.update(&daemon)?;
             tip = current_tip;
         } else {
-            debug!("tip unchanged, no update");
+            trace!("tip UNCHANGED")
         }
 
         // Update mempool
@@ -152,9 +151,11 @@ fn run_server(config: Arc<Config>) -> Result<()> {
 }
 
 fn main() {
+
     let config = Arc::new(Config::from_args());
     if let Err(e) = run_server(config) {
         error!("server failed: {}", e.display_chain());
         process::exit(1);
     }
+
 }
