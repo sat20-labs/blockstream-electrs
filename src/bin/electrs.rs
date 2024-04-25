@@ -126,7 +126,8 @@ fn run_server(config: Arc<Config>) -> Result<()> {
 
         main_loop_count.inc();
 
-        trace!("signal.wait");
+        trace!("main_loop_count={}", main_loop_count.get());
+
         if let Err(err) = signal.wait(Duration::from_secs(5), true) {
             info!("stopping server: {}", err);
             rest_server.stop();
