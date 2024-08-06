@@ -250,7 +250,7 @@ impl Connection {
         Ok(if status == "HTTP/1.1 200 OK" {
             contents
         } else if status == "HTTP/1.1 500 Internal Server Error" {
-            warn!("HTTP status: {}", status);
+            debug!("RPC HTTP 500 error: {}", contents);
             contents // the contents should have a JSONRPC error field
         } else {
             bail!(
