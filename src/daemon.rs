@@ -438,15 +438,21 @@ impl Daemon {
     }
 
     fn retry_reconnect(&self) -> Daemon {
-        // XXX add a max reconnection attempts limit?
-        loop {
+        let attempts = 600;
+        let sleep = Duration::from_secs(1);
+        for _ in 0..attempts {
             match self.reconnect() {
-                Ok(daemon) => break daemon,
+                Ok(daemon) => return daemon,
                 Err(e) => {
                     warn!("failed connecting to RPC daemon: {}", e.display_chain());
+                    std::thread::sleep(sleep);
                 }
             }
         }
+        panic!(
+            "Cannot connect to the daemon after retrying {} times",
+            attempts
+        );
     }
 
     // Send requests in parallel over multiple RPC connections as individual JSON-RPC requests (with no JSON-RPC batching),
@@ -596,7 +602,10 @@ impl Daemon {
     // Missing estimates are logged but do not cause a failure, whatever is available is returned
     #[allow(clippy::float_cmp)]
     pub fn estimatesmartfee_batch(&self, conf_targets: &[u16]) -> Result<HashMap<u16, f64>> {
-        let params_list: Vec<Value> = conf_targets.iter().map(|t| json!([t, "ECONOMICAL"])).collect();
+        let params_list: Vec<Value> = conf_targets
+            .iter()
+            .map(|t| json!([t, "ECONOMICAL"]))
+            .collect();
 
         Ok(self
             .requests("estimatesmartfee", params_list)?
