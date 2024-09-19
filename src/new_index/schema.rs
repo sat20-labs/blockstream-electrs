@@ -370,7 +370,7 @@ impl ChainQuery {
                 HistogramOpts::new("query_duration", "Index query duration (in seconds)"),
                 &["name"],
             ),
-            txs_cache: Mutex::new(SliceCache::new(1_000_000_000)),
+            txs_cache: Mutex::new(SliceCache::new(config.tx_cache_size << 20)),
             cache_hit: metrics.counter(MetricOpts::new("tx_cache_hit", "Tx cache Hit")),
             cache_miss: metrics.counter(MetricOpts::new("tx_cache_miss", "Tx cache Miss")),
         }

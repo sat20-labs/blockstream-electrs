@@ -41,6 +41,9 @@ pub struct Config {
     pub electrum_banner: String,
     pub electrum_rpc_logging: Option<RpcLogging>,
 
+    /// Tx cache size in megabytes
+    pub tx_cache_size: usize,
+
     #[cfg(feature = "liquid")]
     pub parent_network: BNetwork,
     #[cfg(feature = "liquid")]
@@ -191,6 +194,11 @@ impl Config {
                     .long("electrum-rpc-logging")
                     .help(&rpc_logging_help)
                     .takes_value(true),
+            ).arg(
+                Arg::with_name("tx_cache_size")
+                    .long("tx-cache-size")
+                    .help("The amount of MB for a in-memory cache for transactions.")
+                    .default_value("1000")
             );
 
         #[cfg(unix)]
@@ -403,6 +411,7 @@ impl Config {
             index_unspendables: m.is_present("index_unspendables"),
             cors: m.value_of("cors").map(|s| s.to_string()),
             precache_scripts: m.value_of("precache_scripts").map(|s| s.to_string()),
+            tx_cache_size: value_t_or_exit!(m, "tx_cache_size", usize),
 
             #[cfg(feature = "liquid")]
             parent_network,
