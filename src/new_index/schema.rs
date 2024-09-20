@@ -877,11 +877,17 @@ impl ChainQuery {
             self.store.txstore_db.get(&TxRow::key(&txid[..]))
         };
         if let Some(result) = result.as_ref() {
-            if let Ok(mut cache) = self.txs_cache.lock() {
-                let _ = cache.insert(txid.clone(), result);
-            }
+            self.add_txs_to_cache(&[(*txid, result)]);
         }
         result
+    }
+
+    pub fn add_txs_to_cache<T: AsRef<[u8]>>(&self, txs: &[(Txid, T)]) {
+        if let Ok(mut cache) = self.txs_cache.lock() {
+            for (txid, tx) in txs {
+                let _ = cache.insert(*txid, &tx.as_ref());
+            }
+        }
     }
 
     pub fn lookup_txo(&self, outpoint: &OutPoint) -> Option<TxOut> {
