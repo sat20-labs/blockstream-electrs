@@ -882,6 +882,18 @@ impl ChainQuery {
         result
     }
 
+    pub fn txs_cache_miss(&self, txids: &[Txid]) -> Vec<Txid> {
+        let mut result = vec![];
+        if let Ok(cache) = self.txs_cache.lock() {
+            for txid in txids {
+                if !cache.contains(txid) {
+                    result.push(*txid);
+                }
+            }
+        }
+        result
+    }
+
     pub fn add_txs_to_cache<T: AsRef<[u8]>>(&self, txs: &[(Txid, T)]) {
         if let Ok(mut cache) = self.txs_cache.lock() {
             for (txid, tx) in txs {
