@@ -21,7 +21,7 @@ use std::sync::mpsc::{channel, sync_channel, Receiver, Sender, SyncSender};
 use std::thread;
 
 use crate::chain::BlockHeader;
-use bitcoin::hashes::sha256d::Hash as Sha256dHash;
+use satsnet::hashes::sha256d::Hash as Sha256dHash;
 use socket2::{Domain, Protocol, Socket, Type};
 use std::net::SocketAddr;
 

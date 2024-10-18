@@ -1,16 +1,15 @@
 extern crate electrs;
 
-#[cfg(not(feature = "liquid"))]
 #[macro_use]
 extern crate log;
 
-#[cfg(not(feature = "liquid"))]
+
 fn main() {
     use std::collections::HashSet;
     use std::sync::Arc;
 
-    use bitcoin::blockdata::script::ScriptBuf;
-    use bitcoin::consensus::encode::deserialize;
+    use satsnet::blockdata::script::ScriptBuf;
+    use satsnet::consensus::encode::deserialize;
     use electrs::{
         chain::Transaction,
         config::Config,
@@ -62,7 +61,8 @@ fn main() {
         }
 
         let tx: Transaction = deserialize(&value).expect("failed to parse Transaction");
-        let txid = tx.txid();
+        // let txid = tx.txid();
+        let txid = tx.compute_txid();
 
         iter.next();
 
@@ -155,6 +155,3 @@ fn main() {
         total, uih_totals
     );
 }
-
-#[cfg(feature = "liquid")]
-fn main() {}

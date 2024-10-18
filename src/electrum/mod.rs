@@ -1,12 +1,7 @@
 mod server;
 pub use server::RPC;
 
-#[cfg(feature = "electrum-discovery")]
-mod client;
-#[cfg(feature = "electrum-discovery")]
-mod discovery;
-#[cfg(feature = "electrum-discovery")]
-pub use {client::Client, discovery::DiscoveryManager};
+
 
 use std::cmp::Ordering;
 use std::collections::HashMap;

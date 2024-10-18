@@ -43,14 +43,6 @@ pub struct HeaderEntry {
 }
 
 impl HeaderEntry {
-    #[cfg(feature = "bench")]
-    pub fn new(height: usize, hash: BlockHash, header: BlockHeader) -> Self {
-        Self {
-            height,
-            hash,
-            header,
-        }
-    }
     pub fn hash(&self) -> &BlockHash {
         &self.hash
     }
@@ -309,7 +301,7 @@ pub struct BlockHeaderMeta {
 impl From<&BlockEntry> for BlockMeta {
     fn from(b: &BlockEntry) -> BlockMeta {
         let weight = b.block.weight();
-        #[cfg(not(feature = "liquid"))] // rust-bitcoin has a wrapper Weight type
+        // rust-bitcoin has a wrapper Weight type
         let weight = weight.to_wu();
 
         BlockMeta {

@@ -1,15 +1,8 @@
 use rayon::prelude::*;
-
-#[cfg(feature = "liquid")]
-use crate::elements::ebcompact::*;
-#[cfg(not(feature = "liquid"))]
-use bitcoin::consensus::encode::{deserialize, Decodable};
-#[cfg(feature = "liquid")]
-use elements::encode::{deserialize, Decodable};
-
+use satsnet::consensus::encode::{deserialize, Decodable};
 use std::collections::HashMap;
 use std::fs;
-use std::io::Cursor;
+
 use std::path::PathBuf;
 use std::sync::mpsc::Receiver;
 use std::thread;
@@ -189,24 +182,21 @@ fn blkfiles_parser(blobs: Fetcher<Vec<u8>>, magic: u32) -> Fetcher<Vec<SizedBloc
 }
 
 fn parse_blocks(blob: Vec<u8>, magic: u32) -> Result<Vec<SizedBlock>> {
-    let mut cursor = Cursor::new(&blob);
+    let mut cursor = &blob[..];
     let mut slices = vec![];
-    let max_pos = blob.len() as u64;
 
-    while cursor.position() < max_pos {
-        let offset = cursor.position();
+    while cursor.len() > 0 {
         match u32::consensus_decode(&mut cursor) {
             Ok(value) => {
                 if magic != value {
-                    cursor.set_position(offset + 1);
+                    cursor = &cursor[1..];
                     continue;
                 }
             }
             Err(_) => break, // EOF
         };
         let block_size = u32::consensus_decode(&mut cursor).chain_err(|| "no block size")?;
-        let start = cursor.position();
-        let end = start + block_size as u64;
+        let start = cursor.len();
 
         // If Core's WriteBlockToDisk ftell fails, only the magic bytes and size will be written
         // and the block body won't be written to the blk*.dat file.
@@ -215,14 +205,14 @@ fn parse_blocks(blob: Vec<u8>, magic: u32) -> Result<Vec<SizedBlock>> {
         match u32::consensus_decode(&mut cursor) {
             Ok(value) => {
                 if magic == value {
-                    cursor.set_position(start);
+                    cursor = &cursor[..start];
                     continue;
                 }
             }
             Err(_) => break, // EOF
         }
-        slices.push((&blob[start as usize..end as usize], block_size));
-        cursor.set_position(end as u64);
+        slices.push((&blob[blob.len() - cursor.len()..blob.len() - cursor.len() + block_size as usize], block_size));
+        cursor = &cursor[block_size as usize..];
     }
 
     let pool = rayon::ThreadPoolBuilder::new()

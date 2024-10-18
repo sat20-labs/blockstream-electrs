@@ -6,17 +6,14 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Instant;
 
-use bitcoin::hashes::sha256d::Hash as Sha256dHash;
+use satsnet::hashes::sha256d::Hash as Sha256dHash;
 use crypto::digest::Digest;
 use crypto::sha2::Sha256;
 use error_chain::ChainedError;
 use hex::{self, DisplayHex};
 use serde_json::{from_str, Value};
 
-#[cfg(not(feature = "liquid"))]
-use bitcoin::consensus::encode::serialize_hex;
-#[cfg(feature = "liquid")]
-use elements::encode::serialize_hex;
+use satsnet::consensus::encode::serialize_hex;
 
 use crate::chain::Txid;
 use crate::config::{Config, RpcLogging};
@@ -30,9 +27,6 @@ use crate::util::{create_socket, spawn_thread, BlockId, BoolThen, Channel, FullH
 const ELECTRS_VERSION: &str = env!("CARGO_PKG_VERSION");
 const PROTOCOL_VERSION: ProtocolVersion = ProtocolVersion::new(1, 4);
 const MAX_HEADERS: usize = 2016;
-
-#[cfg(feature = "electrum-discovery")]
-use crate::electrum::{DiscoveryManager, ServerFeatures};
 
 // TODO: Sha256dHash should be a generic hash-container (since script hash is single SHA256)
 fn hash_from_value(val: Option<&Value>) -> Result<Sha256dHash> {
@@ -106,8 +100,7 @@ struct Connection {
     sender: SyncSender<Message>,
     stats: Arc<Stats>,
     txs_limit: usize,
-    #[cfg(feature = "electrum-discovery")]
-    discovery: Option<Arc<DiscoveryManager>>,
+
     rpc_logging: Option<RpcLogging>,
 }
 
@@ -119,7 +112,6 @@ impl Connection {
         sender: SyncSender<Message>,
         stats: Arc<Stats>,
         txs_limit: usize,
-        #[cfg(feature = "electrum-discovery")] discovery: Option<Arc<DiscoveryManager>>,
         rpc_logging: Option<RpcLogging>,
     ) -> Connection {
         Connection {
@@ -131,8 +123,6 @@ impl Connection {
             sender,
             stats,
             txs_limit,
-            #[cfg(feature = "electrum-discovery")]
-            discovery,
             rpc_logging,
         }
     }
@@ -156,47 +146,13 @@ impl Connection {
         Ok(json!(self.query.config().electrum_banner.clone()))
     }
 
-    #[cfg(feature = "electrum-discovery")]
-    fn server_features(&self) -> Result<Value> {
-        let discovery = self
-            .discovery
-            .as_ref()
-            .chain_err(|| "discovery is disabled")?;
-        Ok(json!(discovery.our_features()))
-    }
-
     fn server_donation_address(&self) -> Result<Value> {
         Ok(Value::Null)
     }
 
     fn server_peers_subscribe(&self) -> Result<Value> {
-        #[cfg(feature = "electrum-discovery")]
-        let servers = self
-            .discovery
-            .as_ref()
-            .map_or_else(|| json!([]), |d| json!(d.get_servers()));
-
-        #[cfg(not(feature = "electrum-discovery"))]
         let servers = json!([]);
-
         Ok(servers)
-    }
-
-    #[cfg(feature = "electrum-discovery")]
-    fn server_add_peer(&self, params: &[Value]) -> Result<Value> {
-        let discovery = self
-            .discovery
-            .as_ref()
-            .chain_err(|| "discovery is disabled")?;
-
-        let features = params
-            .get(0)
-            .chain_err(|| "missing features param")?
-            .clone();
-        let features = serde_json::from_value(features).chain_err(|| "invalid features")?;
-
-        discovery.add_server_request(self.addr.ip(), features)?;
-        Ok(json!(true))
     }
 
     fn mempool_get_fee_histogram(&self) -> Result<Value> {
@@ -302,7 +258,6 @@ impl Connection {
         }
     }
 
-    #[cfg(not(feature = "liquid"))]
     fn blockchain_scripthash_get_balance(&self, params: &[Value]) -> Result<Value> {
         let script_hash = hash_from_value(params.get(0)).chain_err(|| "bad script_hash")?;
         let (chain_stats, mempool_stats) = self.query.stats(&script_hash[..]);
@@ -342,15 +297,6 @@ impl Connection {
                 "tx_hash": utxo.txid,
                 "value": utxo.value,
             });
-
-            #[cfg(feature = "liquid")]
-            let json = {
-                let mut json = json;
-                json["asset"] = json!(utxo.asset);
-                json["nonce"] = json!(utxo.nonce);
-                json
-            };
-
             json
         };
 
@@ -437,7 +383,6 @@ impl Connection {
             "blockchain.estimatefee" => self.blockchain_estimatefee(&params),
             "blockchain.headers.subscribe" => self.blockchain_headers_subscribe(),
             "blockchain.relayfee" => self.blockchain_relayfee(),
-            #[cfg(not(feature = "liquid"))]
             "blockchain.scripthash.get_balance" => self.blockchain_scripthash_get_balance(&params),
             "blockchain.scripthash.get_history" => self.blockchain_scripthash_get_history(&params),
             "blockchain.scripthash.listunspent" => self.blockchain_scripthash_listunspent(&params),
@@ -455,11 +400,6 @@ impl Connection {
             "server.peers.subscribe" => self.server_peers_subscribe(),
             "server.ping" => Ok(Value::Null),
             "server.version" => self.server_version(),
-
-            #[cfg(feature = "electrum-discovery")]
-            "server.features" => self.server_features(),
-            #[cfg(feature = "electrum-discovery")]
-            "server.add_peer" => self.server_add_peer(&params),
 
             &_ => bail!("unknown method {} {:?}", method, params),
         };
@@ -773,30 +713,6 @@ impl RPC {
 
         let notification = Channel::unbounded();
 
-        // Discovery is enabled when electrum-public-hosts is set
-        #[cfg(feature = "electrum-discovery")]
-        let discovery = config.electrum_public_hosts.clone().map(|hosts| {
-            use crate::chain::genesis_hash;
-            let features = ServerFeatures {
-                hosts,
-                server_version: format!("electrs-esplora {}", ELECTRS_VERSION),
-                genesis_hash: genesis_hash(config.network_type),
-                protocol_min: PROTOCOL_VERSION,
-                protocol_max: PROTOCOL_VERSION,
-                hash_function: "sha256".into(),
-                pruning: None,
-            };
-            let discovery = Arc::new(DiscoveryManager::new(
-                config.network_type,
-                features,
-                PROTOCOL_VERSION,
-                config.electrum_announce,
-                config.tor_proxy,
-            ));
-            DiscoveryManager::spawn_jobs_thread(Arc::clone(&discovery));
-            discovery
-        });
-
         let rpc_addr = config.electrum_rpc_addr;
         let txs_limit = config.electrum_txs_limit;
 
@@ -817,8 +733,6 @@ impl RPC {
                     let stats = Arc::clone(&stats);
                     let garbage_sender = garbage_sender.clone();
                     let rpc_logging = config.electrum_rpc_logging.clone();
-                    #[cfg(feature = "electrum-discovery")]
-                    let discovery = discovery.clone();
 
                     let (sender, receiver) = mpsc::sync_channel(10);
                     senders.lock().unwrap().push(sender.clone());
@@ -832,8 +746,6 @@ impl RPC {
                             sender,
                             stats,
                             txs_limit,
-                            #[cfg(feature = "electrum-discovery")]
-                            discovery,
                             rpc_logging,
                         );
                         conn.run(receiver);

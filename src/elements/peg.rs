@@ -25,11 +25,11 @@ pub fn get_pegout_data(
 // API representation of pegout data associated with an output
 #[derive(Serialize, Clone)]
 pub struct PegoutValue {
-    pub genesis_hash: bitcoin::BlockHash,
-    pub scriptpubkey: bitcoin::ScriptBuf,
+    pub genesis_hash: satsnet::BlockHash,
+    pub scriptpubkey: satsnet::ScriptBuf,
     pub scriptpubkey_asm: String,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub scriptpubkey_address: Option<bitcoin::Address>,
+    pub scriptpubkey_address: Option<satsnet::Address>,
 }
 
 impl PegoutValue {
@@ -37,7 +37,7 @@ impl PegoutValue {
         let pegoutdata = get_pegout_data(txout, network, parent_network)?;
 
         let scriptpubkey = pegoutdata.script_pubkey;
-        let address = bitcoin::Address::from_script(&scriptpubkey, parent_network).ok();
+        let address = satsnet::Address::from_script(&scriptpubkey, parent_network).ok();
 
         Some(PegoutValue {
             genesis_hash: pegoutdata.genesis_hash,

@@ -3,18 +3,6 @@ use crate::util::BlockId;
 
 use std::collections::{BTreeSet, HashMap};
 
-#[cfg(feature = "liquid")]
-lazy_static! {
-    static ref REGTEST_INITIAL_ISSUANCE_PREVOUT: Txid =
-        "50cdc410c9d0d61eeacc531f52d2c70af741da33af127c364e52ac1ee7c030a5"
-            .parse()
-            .unwrap();
-    static ref TESTNET_INITIAL_ISSUANCE_PREVOUT: Txid =
-        "0c52d2526a5c9f00e9fb74afd15dd3caaf17c823159a514f929ae25193a43a52"
-            .parse()
-            .unwrap();
-}
-
 #[derive(Serialize, Deserialize, Debug)]
 pub struct TransactionStatus {
     pub confirmed: bool,
@@ -52,27 +40,16 @@ pub struct TxInput {
 }
 
 pub fn is_coinbase(txin: &TxIn) -> bool {
-    #[cfg(not(feature = "liquid"))]
     return txin.previous_output.is_null();
-    #[cfg(feature = "liquid")]
-    return txin.is_coinbase();
 }
 
 pub fn has_prevout(txin: &TxIn) -> bool {
-    #[cfg(not(feature = "liquid"))]
     return !txin.previous_output.is_null();
-    #[cfg(feature = "liquid")]
-    return !txin.is_coinbase()
-        && !txin.is_pegin
-        && txin.previous_output.txid != *REGTEST_INITIAL_ISSUANCE_PREVOUT
-        && txin.previous_output.txid != *TESTNET_INITIAL_ISSUANCE_PREVOUT;
 }
 
 pub fn is_spendable(txout: &TxOut) -> bool {
-    #[cfg(not(feature = "liquid"))]
-    return !txout.script_pubkey.is_provably_unspendable();
-    #[cfg(feature = "liquid")]
-    return !txout.is_fee() && !txout.script_pubkey.is_provably_unspendable();
+    // return !txout.script_pubkey.is_provably_unspendable();
+    return !txout.script_pubkey.is_op_return();
 }
 
 pub fn extract_tx_prevouts<'a>(

@@ -1,4 +1,4 @@
-use bitcoin::hashes::{sha256, Hash};
+use satsnet::hashes::{sha256, Hash};
 use elements::secp256k1_zkp::{PedersenCommitment, Tweak, ZERO_TWEAK};
 use elements::{issuance::ContractHash, AssetId, TxIn};
 

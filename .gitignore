@@ -6,3 +6,4 @@ target
 *.pyc
 result
 .direnv
+data

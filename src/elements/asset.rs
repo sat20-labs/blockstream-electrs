@@ -1,7 +1,7 @@
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, RwLock};
 
-use bitcoin::hashes::{sha256, Hash};
+use satsnet::hashes::{sha256, Hash};
 use elements::confidential::{Asset, Value};
 use elements::encode::{deserialize, serialize};
 use elements::secp256k1_zkp::ZERO_TWEAK;

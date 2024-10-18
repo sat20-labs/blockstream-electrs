@@ -11,9 +11,6 @@ use crate::chain::Network;
 use crate::daemon::CookieGetter;
 use crate::errors::*;
 
-#[cfg(feature = "liquid")]
-use bitcoin::Network as BNetwork;
-
 const ELECTRS_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 #[derive(Debug, Clone)]
@@ -47,18 +44,6 @@ pub struct Config {
     /// By default compaction is off until initial sync is finished for performance reasons,
     /// however, this requires much more disk space.
     pub initial_sync_compaction: bool,
-
-    #[cfg(feature = "liquid")]
-    pub parent_network: BNetwork,
-    #[cfg(feature = "liquid")]
-    pub asset_db_path: Option<PathBuf>,
-
-    #[cfg(feature = "electrum-discovery")]
-    pub electrum_public_hosts: Option<crate::electrum::ServerHosts>,
-    #[cfg(feature = "electrum-discovery")]
-    pub electrum_announce: bool,
-    #[cfg(feature = "electrum-discovery")]
-    pub tor_proxy: Option<std::net::SocketAddr>,
 }
 
 fn str_to_socketaddr(address: &str, what: &str) -> SocketAddr {
@@ -218,38 +203,6 @@ impl Config {
                     .takes_value(true),
             );
 
-        #[cfg(feature = "liquid")]
-        let args = args
-            .arg(
-                Arg::with_name("parent_network")
-                    .long("parent-network")
-                    .help("Select parent network type (mainnet, testnet, regtest)")
-                    .takes_value(true),
-            )
-            .arg(
-                Arg::with_name("asset_db_path")
-                    .long("asset-db-path")
-                    .help("Directory for liquid/elements asset db")
-                    .takes_value(true),
-            );
-
-        #[cfg(feature = "electrum-discovery")]
-        let args = args.arg(
-                Arg::with_name("electrum_public_hosts")
-                    .long("electrum-public-hosts")
-                    .help("A dictionary of hosts where the Electrum server can be reached at. Required to enable server discovery. See https://electrumx.readthedocs.io/en/latest/protocol-methods.html#server-features")
-                    .takes_value(true)
-            ).arg(
-                Arg::with_name("electrum_announce")
-                    .long("electrum-announce")
-                    .help("Announce the Electrum server to other servers")
-            ).arg(
-            Arg::with_name("tor_proxy")
-                .long("tor-proxy")
-                .help("ip:addr of socks proxy for accessing onion hosts")
-                .takes_value(true),
-        );
-
         let m = args.get_matches();
 
         let network_name = m.value_of("network").unwrap_or("mainnet");
@@ -257,84 +210,36 @@ impl Config {
         let db_dir = Path::new(m.value_of("db_dir").unwrap_or("./db"));
         let db_path = db_dir.join(network_name);
 
-        #[cfg(feature = "liquid")]
-        let parent_network = m
-            .value_of("parent_network")
-            .map(|s| s.parse().expect("invalid parent network"))
-            .unwrap_or_else(|| match network_type {
-                Network::Liquid => BNetwork::Bitcoin,
-                // XXX liquid testnet/regtest don't have a parent chain
-                Network::LiquidTestnet | Network::LiquidRegtest => BNetwork::Regtest,
-            });
-
-        #[cfg(feature = "liquid")]
-        let asset_db_path = m.value_of("asset_db_path").map(PathBuf::from);
-
         let default_daemon_port = match network_type {
-            #[cfg(not(feature = "liquid"))]
             Network::Bitcoin => 8332,
-            #[cfg(not(feature = "liquid"))]
             Network::Testnet => 18332,
-            #[cfg(not(feature = "liquid"))]
+            Network::Testnet4 => 28332,
             Network::Regtest => 18443,
-            #[cfg(not(feature = "liquid"))]
             Network::Signet => 38332,
-
-            #[cfg(feature = "liquid")]
-            Network::Liquid => 7041,
-            #[cfg(feature = "liquid")]
-            Network::LiquidTestnet | Network::LiquidRegtest => 7040,
         };
         let default_electrum_port = match network_type {
-            #[cfg(not(feature = "liquid"))]
             Network::Bitcoin => 50001,
-            #[cfg(not(feature = "liquid"))]
             Network::Testnet => 60001,
-            #[cfg(not(feature = "liquid"))]
+            Network::Testnet4 => 60301,
             Network::Regtest => 60401,
-            #[cfg(not(feature = "liquid"))]
             Network::Signet => 60601,
 
-            #[cfg(feature = "liquid")]
-            Network::Liquid => 51000,
-            #[cfg(feature = "liquid")]
-            Network::LiquidTestnet => 51301,
-            #[cfg(feature = "liquid")]
-            Network::LiquidRegtest => 51401,
         };
         let default_http_port = match network_type {
-            #[cfg(not(feature = "liquid"))]
             Network::Bitcoin => 3000,
-            #[cfg(not(feature = "liquid"))]
             Network::Testnet => 3001,
-            #[cfg(not(feature = "liquid"))]
+            Network::Testnet4 => 3004,
             Network::Regtest => 3002,
-            #[cfg(not(feature = "liquid"))]
             Network::Signet => 3003,
 
-            #[cfg(feature = "liquid")]
-            Network::Liquid => 3000,
-            #[cfg(feature = "liquid")]
-            Network::LiquidTestnet => 3001,
-            #[cfg(feature = "liquid")]
-            Network::LiquidRegtest => 3002,
         };
         let default_monitoring_port = match network_type {
-            #[cfg(not(feature = "liquid"))]
             Network::Bitcoin => 4224,
-            #[cfg(not(feature = "liquid"))]
             Network::Testnet => 14224,
-            #[cfg(not(feature = "liquid"))]
+            Network::Testnet4 => 34224,
             Network::Regtest => 24224,
-            #[cfg(not(feature = "liquid"))]
             Network::Signet => 54224,
 
-            #[cfg(feature = "liquid")]
-            Network::Liquid => 34224,
-            #[cfg(feature = "liquid")]
-            Network::LiquidTestnet => 44324,
-            #[cfg(feature = "liquid")]
-            Network::LiquidRegtest => 44224,
         };
 
         let daemon_rpc_addr: SocketAddr = str_to_socketaddr(
@@ -383,10 +288,7 @@ impl Config {
             |s| s.into(),
         );
 
-        #[cfg(feature = "electrum-discovery")]
-        let electrum_public_hosts = m
-            .value_of("electrum_public_hosts")
-            .map(|s| serde_json::from_str(s).expect("invalid --electrum-public-hosts"));
+
 
         let mut log = stderrlog::new();
         log.verbosity(m.occurrences_of("verbosity") as usize);
@@ -422,18 +324,6 @@ impl Config {
             cors: m.value_of("cors").map(|s| s.to_string()),
             precache_scripts: m.value_of("precache_scripts").map(|s| s.to_string()),
             initial_sync_compaction: m.is_present("initial_sync_compaction"),
-
-            #[cfg(feature = "liquid")]
-            parent_network,
-            #[cfg(feature = "liquid")]
-            asset_db_path,
-
-            #[cfg(feature = "electrum-discovery")]
-            electrum_public_hosts,
-            #[cfg(feature = "electrum-discovery")]
-            electrum_announce: m.is_present("electrum_announce"),
-            #[cfg(feature = "electrum-discovery")]
-            tor_proxy: m.value_of("tor_proxy").map(|s| s.parse().unwrap()),
         };
         eprintln!("{:?}", config);
         config
@@ -477,21 +367,11 @@ impl From<&str> for RpcLogging {
 
 pub fn get_network_subdir(network: Network) -> Option<&'static str> {
     match network {
-        #[cfg(not(feature = "liquid"))]
         Network::Bitcoin => None,
-        #[cfg(not(feature = "liquid"))]
         Network::Testnet => Some("testnet3"),
-        #[cfg(not(feature = "liquid"))]
+        Network::Testnet4 => Some("testnet4"),
         Network::Regtest => Some("regtest"),
-        #[cfg(not(feature = "liquid"))]
         Network::Signet => Some("signet"),
-
-        #[cfg(feature = "liquid")]
-        Network::Liquid => Some("liquidv1"),
-        #[cfg(feature = "liquid")]
-        Network::LiquidTestnet => Some("liquidtestnet"),
-        #[cfg(feature = "liquid")]
-        Network::LiquidRegtest => Some("liquidregtest"),
     }
 }
 

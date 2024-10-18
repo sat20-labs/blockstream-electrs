@@ -4,25 +4,23 @@ version = "0.4.1"
 authors = ["Roman Zeyde <me@romanzey.de>"]
 description = "An efficient re-implementation of Electrum Server in Rust"
 license = "MIT"
-homepage = "https://github.com/romanz/electrs"
-repository = "https://github.com/romanz/electrs"
-keywords = ["bitcoin", "electrum", "server", "index", "database"]
+homepage = "https://github.com/sat20-labs/blockstream-electrs"
+repository = "https://github.com/sat20-labs/blockstream-electrs"
+keywords = ["bitcoin", "electrum", "server", "satsnet", "database"]
 documentation = "https://docs.rs/electrs/"
 readme = "README.md"
 edition = "2018"
 default-run = "electrs"
 
 [features]
-liquid = ["elements"]
 electrum-discovery = ["electrum-client"]
-bench = []
 
 [dependencies]
 arraydeque = "0.5.1"
 arrayref = "0.3.6"
 base64 = "0.22"
 bincode = "1.3.1"
-bitcoin = { version = "0.31", features = ["serde"] }
+satsnet = { version = "0.32.8", features = ["serde", "rand-std"] }
 clap = "2.33.3"
 crossbeam-channel = "0.5.0"
 dirs = "5.0.1"
@@ -57,22 +55,6 @@ tokio = { version = "1", features = ["sync", "macros"] }
 
 # optional dependencies for electrum-discovery
 electrum-client = { version = "0.8", optional = true }
-
-
-[dev-dependencies]
-bitcoind = { version = "0.34.3", features = ["25_0"] }
-elementsd = { version = "0.9.2", features = ["22_1_1"] }
-electrumd = { version = "0.1.0", features = ["4_5_4"] }
-ureq = { version = "2.9", default-features = false, features = ["json"] }
-tempfile = "3.10"
-criterion = { version = "0.4", features = ["html_reports"] }
-bitcoin-test-data = { version = "*" }
-
-[[bench]]
-name = "benches"
-harness = false
-required-features = ["bench"]
-
 
 [profile.release]
 lto = true
