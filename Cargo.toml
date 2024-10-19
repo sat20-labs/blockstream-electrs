@@ -12,15 +12,12 @@ readme = "README.md"
 edition = "2018"
 default-run = "electrs"
 
-[features]
-electrum-discovery = ["electrum-client"]
-
 [dependencies]
 arraydeque = "0.5.1"
 arrayref = "0.3.6"
 base64 = "0.22"
 bincode = "1.3.1"
-satsnet = { version = "0.32.8", features = ["serde", "rand-std"] }
+satsnet = { version = "0.32.9", features = ["serde", "rand-std", "satsnet"] }
 clap = "2.33.3"
 crossbeam-channel = "0.5.0"
 dirs = "5.0.1"
@@ -53,19 +50,13 @@ hyperlocal = "0.8"
 # close to same tokio version as dependent by hyper v0.14 and hyperlocal 0.8 -- things can go awry if they mismatch
 tokio = { version = "1", features = ["sync", "macros"] }
 
-# optional dependencies for electrum-discovery
-electrum-client = { version = "0.8", optional = true }
+openssl = "0.10"
+rustls-pemfile = "1.0"
+webpki-roots = "0.22"
+reqwest = { version = "0.11", features = ["default-tls", "blocking"] }
 
 [profile.release]
 lto = true
 panic = 'abort'
 codegen-units = 1
 
-[patch.crates-io.electrum-client]
-git = "https://github.com/Blockstream/rust-electrum-client"
-rev = "d3792352992a539afffbe11501d1aff9fd5b919d"            # add-peer branch
-
-# not yet published on crates.io
-[patch.crates-io.electrumd]
-git = "https://github.com/shesek/electrumd"
-rev = "b35d9db285d932cb3c2296beab65e571a2506349"

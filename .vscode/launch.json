@@ -41,11 +41,11 @@
             "args": [
                 "-vvvv",
                 "--cookie",
-                "jacky:123456",
+                "q17AIoqBJSEhW7djqjn0nTsZcz4=:nnlkAZn58bqsyYwVtHIajZ16cj8=",
                 "--db-dir",
                 "./data",
                 "--daemon-rpc-addr",
-                "192.168.10.102:28332",
+                "192.168.10.104:14827",
                 "--jsonrpc-import",
                 "--network",
                 "testnet4",

@@ -12,3 +12,20 @@
 # Performance
 
 * Consider https://github.com/facebook/rocksdb/wiki/RocksDB-Tuning-Guide#difference-of-spinning-disk
+
+# note
+
+curl --user jacky:_RZekaGRgKQJSIOYi6vq0_CkJtjoCootamy81J2cDn0 --data-binary '{"jsonrpc": "1.0", "id": "curltest", "method": "getnetworkinfo", "params": []}' -H 'content-type: text/plain;' http://192.168.10.101:8332/
+
+curl --user jacky:_RZekaGRgKQJSIOYi6vq0_CkJtjoCootamy81J2cDn0 --data-binary '{"jsonrpc": "1.0", "id": "1", "method": "getblockcount", "params": []}' -H 'content-type: text/plain;' --cacert ./rpc.cert https://192.168.10.102:8337/
+
+src/new_index/query.rs
+src/daemon.rs
+src/new_index/fetch.rs
+src/new_index/schema.rs
+src/bin/electrs.rs
+src/config.rs
+tx-fingerprint-stats.rs
+src/signal.rs
+src/chain.rs
+src/util/block.rs

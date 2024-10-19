@@ -61,7 +61,6 @@ struct BlockValue {
 }
 
 impl BlockValue {
-    #[cfg_attr(feature = "liquid", allow(unused_variables))]
     fn new(blockhm: BlockHeaderMeta) -> Self {
         let header = blockhm.header_entry.header();
         BlockValue {

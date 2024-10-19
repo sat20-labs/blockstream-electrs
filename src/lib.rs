@@ -1,7 +1,6 @@
 #![recursion_limit = "1024"]
 
 // See https://github.com/romanz/electrs/issues/193 & https://github.com/rust-rocksdb/rust-rocksdb/issues/327
-#[cfg(not(feature = "oldcpu"))]
 extern crate rocksdb;
 
 #[macro_use]
