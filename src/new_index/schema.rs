@@ -3,12 +3,13 @@ use satsnet::merkle_tree::MerkleBlock;
 use satsnet::VarInt;
 use crypto::digest::Digest;
 use crypto::sha2::Sha256;
-use hex::FromHex;
+
 use itertools::Itertools;
 use rayon::prelude::*;
 use satsnet::consensus::encode::{deserialize, serialize};
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::path::Path;
+use std::str::FromStr;
 use std::sync::{Arc, RwLock};
 
 use crate::chain::{
@@ -24,7 +25,7 @@ use crate::util::{
 };
 
 use crate::new_index::db::{DBFlush, DBRow, ReverseScanIterator, ScanIterator, DB};
-use crate::new_index::fetch::{start_fetcher, BlockEntry, FetchFrom};
+use crate::new_index::fetch::{start_fetcher, BlockEntry};
 
 const MIN_HISTORY_ITEMS_TO_CACHE: usize = 100;
 
@@ -140,14 +141,12 @@ impl ScriptStats {
 pub struct Indexer {
     store: Arc<Store>,
     flush: DBFlush,
-    from: FetchFrom,
     iconfig: IndexerConfig,
     duration: HistogramVec,
     tip_metric: Gauge,
 }
 
 struct IndexerConfig {
-    light_mode: bool,
     address_search: bool,
     index_unspendables: bool,
     network: Network,
@@ -156,7 +155,6 @@ struct IndexerConfig {
 impl From<&Config> for IndexerConfig {
     fn from(config: &Config) -> Self {
         IndexerConfig {
-            light_mode: config.light_mode,
             address_search: config.address_search,
             index_unspendables: config.index_unspendables,
             network: config.network_type,
@@ -166,19 +164,16 @@ impl From<&Config> for IndexerConfig {
 
 pub struct ChainQuery {
     store: Arc<Store>, // TODO: should be used as read-only
-    daemon: Arc<Daemon>,
-    light_mode: bool,
     duration: HistogramVec,
     network: Network,
 }
 
 // TODO: &[Block] should be an iterator / a queue.
 impl Indexer {
-    pub fn open(store: Arc<Store>, from: FetchFrom, config: &Config, metrics: &Metrics) -> Self {
+    pub fn open(store: Arc<Store>, config: &Config, metrics: &Metrics) -> Self {
         Indexer {
             store,
             flush: DBFlush::Disable,
-            from,
             iconfig: IndexerConfig::from(config),
             duration: metrics.histogram_vec(
                 HistogramOpts::new("index_duration", "Index update duration (in seconds)"),
@@ -238,20 +233,18 @@ impl Indexer {
 
         let to_add = self.headers_to_add(&new_headers);
         debug!(
-            "adding transactions from {} blocks using {:?}",
-            to_add.len(),
-            self.from
+            "adding transactions from {}",
+            to_add.len()
         );
-        start_fetcher(self.from, &daemon, to_add)?.map(|blocks| self.add(&blocks));
+        start_fetcher(&daemon, to_add)?.map(|blocks| self.add(&blocks));
         self.start_auto_compactions(&self.store.txstore_db);
 
         let to_index = self.headers_to_index(&new_headers);
         debug!(
-            "indexing history from {} blocks using {:?}",
-            to_index.len(),
-            self.from
+            "indexing history from {}",
+            to_index.len()
         );
-        start_fetcher(self.from, &daemon, to_index)?.map(|blocks| self.index(&blocks));
+        start_fetcher(&daemon, to_index)?.map(|blocks| self.index(&blocks));
         self.start_auto_compactions(&self.store.history_db);
 
         if let DBFlush::Disable = self.flush {
@@ -269,10 +262,6 @@ impl Indexer {
         headers.apply(new_headers);
         assert_eq!(tip, *headers.tip());
 
-        if let FetchFrom::BlkFiles = self.from {
-            self.from = FetchFrom::Bitcoind;
-        }
-
         self.tip_metric.set(headers.len() as i64 - 1);
 
         Ok(tip)
@@ -282,7 +271,7 @@ impl Indexer {
         // TODO: skip orphaned blocks?
         let rows = {
             let _timer = self.start_timer("add_process");
-            add_blocks(blocks, &self.iconfig)
+            add_blocks(blocks)
         };
         {
             let _timer = self.start_timer("add_write");
@@ -315,18 +304,12 @@ impl Indexer {
         };
         self.store.history_db.write(rows, self.flush);
     }
-
-    pub fn fetch_from(&mut self, from: FetchFrom) {
-        self.from = from;
-    }
 }
 
 impl ChainQuery {
-    pub fn new(store: Arc<Store>, daemon: Arc<Daemon>, config: &Config, metrics: &Metrics) -> Self {
+    pub fn new(store: Arc<Store>, config: &Config, metrics: &Metrics) -> Self {
         ChainQuery {
             store,
-            daemon,
-            light_mode: config.light_mode,
             network: config.network_type,
             duration: metrics.histogram_vec(
                 HistogramOpts::new("query_duration", "Index query duration (in seconds)"),
@@ -349,59 +332,40 @@ impl ChainQuery {
 
     pub fn get_block_txids(&self, hash: &BlockHash) -> Option<Vec<Txid>> {
         let _timer = self.start_timer("get_block_txids");
-
-        if self.light_mode {
-            // TODO fetch block as binary from REST API instead of as hex
-            let mut blockinfo = self.daemon.getblock_raw(hash, 1).ok()?;
-            Some(serde_json::from_value(blockinfo["tx"].take()).unwrap())
-        } else {
-            self.store
-                .txstore_db
-                .get(&BlockRow::txids_key(full_hash(&hash[..])))
-                .map(|val| bincode::deserialize_little(&val).expect("failed to parse block txids"))
-        }
+        self.store
+            .txstore_db
+            .get(&BlockRow::txids_key(full_hash(&hash[..])))
+            .map(|val| bincode::deserialize_little(&val).expect("failed to parse block txids"))
+        
     }
 
     pub fn get_block_meta(&self, hash: &BlockHash) -> Option<BlockMeta> {
         let _timer = self.start_timer("get_block_meta");
-
-        if self.light_mode {
-            let blockinfo = self.daemon.getblock_raw(hash, 1).ok()?;
-            Some(serde_json::from_value(blockinfo).unwrap())
-        } else {
-            self.store
-                .txstore_db
-                .get(&BlockRow::meta_key(full_hash(&hash[..])))
-                .map(|val| bincode::deserialize_little(&val).expect("failed to parse BlockMeta"))
-        }
+        self.store
+            .txstore_db
+            .get(&BlockRow::meta_key(full_hash(&hash[..])))
+            .map(|val| bincode::deserialize_little(&val).expect("failed to parse BlockMeta"))
     }
 
     pub fn get_block_raw(&self, hash: &BlockHash) -> Option<Vec<u8>> {
         let _timer = self.start_timer("get_block_raw");
 
-        if self.light_mode {
-            let blockval = self.daemon.getblock_raw(hash, 0).ok()?;
-            let blockhex = blockval.as_str().expect("valid block from bitcoind");
-            Some(Vec::from_hex(blockhex).expect("valid block from bitcoind"))
-        } else {
-            let entry = self.header_by_hash(hash)?;
-            let meta = self.get_block_meta(hash)?;
-            let txids = self.get_block_txids(hash)?;
+        let entry = self.header_by_hash(hash)?;
+        let meta = self.get_block_meta(hash)?;
+        let txids = self.get_block_txids(hash)?;
 
-            // Reconstruct the raw block using the header and txids,
-            // as <raw header><tx count varint><raw txs>
-            let mut raw = Vec::with_capacity(meta.size as usize);
+        // Reconstruct the raw block using the header and txids,
+        // as <raw header><tx count varint><raw txs>
+        let mut raw = Vec::with_capacity(meta.size as usize);
 
-            raw.append(&mut serialize(entry.header()));
-            raw.append(&mut serialize(&VarInt(txids.len() as u64)));
+        raw.append(&mut serialize(entry.header()));
+        raw.append(&mut serialize(&VarInt(txids.len() as u64)));
 
-            for txid in txids {
-                // we don't need to provide the blockhash because we know we're not in light mode
-                raw.append(&mut self.lookup_raw_txn(&txid, None)?);
-            }
-
-            Some(raw)
+        for txid in txids {
+            // we don't need to provide the blockhash because we know we're not in light mode
+            raw.append(&mut self.lookup_raw_txn(&txid)?);
         }
+        Some(raw)
     }
 
     pub fn get_block_header(&self, hash: &BlockHash) -> Option<BlockHeader> {
@@ -754,16 +718,16 @@ impl ChainQuery {
         let _timer = self.start_timer("lookup_txns");
         txids
             .par_iter()
-            .map(|(txid, blockid)| {
-                self.lookup_txn(txid, Some(&blockid.hash))
+            .map(|(txid,_)| {
+                self.lookup_txn(txid)
                     .chain_err(|| "missing tx")
             })
             .collect::<Result<Vec<Transaction>>>()
     }
 
-    pub fn lookup_txn(&self, txid: &Txid, blockhash: Option<&BlockHash>) -> Option<Transaction> {
+    pub fn lookup_txn(&self, txid: &Txid) -> Option<Transaction> {
         let _timer = self.start_timer("lookup_txn");
-        self.lookup_raw_txn(txid, blockhash).map(|rawtx| {
+        self.lookup_raw_txn(txid).map(|rawtx| {
             let txn: Transaction = deserialize(&rawtx).expect("failed to parse Transaction");
             // assert_eq!(*txid, txn.txid());
             assert_eq!(*txid, txn.compute_txid());
@@ -771,23 +735,9 @@ impl ChainQuery {
         })
     }
 
-    pub fn lookup_raw_txn(&self, txid: &Txid, blockhash: Option<&BlockHash>) -> Option<Bytes> {
+    pub fn lookup_raw_txn(&self, txid: &Txid) -> Option<Bytes> {
         let _timer = self.start_timer("lookup_raw_txn");
-
-        if self.light_mode {
-            let queried_blockhash =
-                blockhash.map_or_else(|| self.tx_confirming_block(txid).map(|b| b.hash), |_| None);
-            let blockhash = blockhash.or_else(|| queried_blockhash.as_ref())?;
-            // TODO fetch transaction as binary from REST API instead of as hex
-            let txval = self
-                .daemon
-                .gettransaction_raw(txid, blockhash, false)
-                .ok()?;
-            let txhex = txval.as_str().expect("valid tx from bitcoind");
-            Some(Bytes::from_hex(txhex).expect("valid tx from bitcoind"))
-        } else {
-            self.store.txstore_db.get(&TxRow::key(&txid[..]))
-        }
+        self.store.txstore_db.get(&TxRow::key(&txid[..]))
     }
 
     pub fn lookup_txo(&self, outpoint: &OutPoint) -> Option<TxOut> {
@@ -883,7 +833,7 @@ fn load_blockheaders(db: &DB) -> HashMap<BlockHash, BlockHeader> {
         .collect()
 }
 
-fn add_blocks(block_entries: &[BlockEntry], iconfig: &IndexerConfig) -> Vec<DBRow> {
+fn add_blocks(block_entries: &[BlockEntry]) -> Vec<DBRow> {
     // persist individual transactions:
     //      T{txid} → {rawtx}
     //      C{txid}{blockhash}{height} →
@@ -900,13 +850,11 @@ fn add_blocks(block_entries: &[BlockEntry], iconfig: &IndexerConfig) -> Vec<DBRo
             // let txids: Vec<Txid> = b.block.txdata.iter().map(|tx| tx.txid()).collect();
             let txids: Vec<Txid> = b.block.txdata.iter().map(|tx| tx.compute_txid()).collect();
             for (tx, txid) in b.block.txdata.iter().zip(txids.iter()) {
-                add_transaction(*txid, tx, blockhash, &mut rows, iconfig);
+                add_transaction(*txid, tx, blockhash, &mut rows);
             }
 
-            if !iconfig.light_mode {
-                rows.push(BlockRow::new_txids(blockhash, &txids).into_row());
-                rows.push(BlockRow::new_meta(blockhash, &BlockMeta::from(b)).into_row());
-            }
+            rows.push(BlockRow::new_txids(blockhash, &txids).into_row());
+            rows.push(BlockRow::new_meta(blockhash, &BlockMeta::from(b)).into_row());
 
             rows.push(BlockRow::new_header(&b).into_row());
             rows.push(BlockRow::new_done(blockhash).into_row()); // mark block as "added"
@@ -921,14 +869,11 @@ fn add_transaction(
     tx: &Transaction,
     blockhash: FullHash,
     rows: &mut Vec<DBRow>,
-    iconfig: &IndexerConfig,
 ) {
     rows.push(TxConfRow::new(txid, blockhash).into_row());
 
-    if !iconfig.light_mode {
-        rows.push(TxRow::new(txid, tx).into_row());
-    }
-
+    rows.push(TxRow::new(txid, tx).into_row());
+    
     let txid = full_hash(&txid[..]);
     for (txo_index, txo) in tx.output.iter().enumerate() {
         if is_spendable(txo) {
@@ -938,16 +883,45 @@ fn add_transaction(
 }
 
 fn get_previous_txos(block_entries: &[BlockEntry]) -> BTreeSet<OutPoint> {
-    block_entries
-        .iter()
-        .flat_map(|b| b.block.txdata.iter())
-        .flat_map(|tx| {
+    // block_entries
+    //     .iter()
+    //     .flat_map(|b| b.block.txdata.iter())
+    //     .flat_map(|tx| {
+    //         tx.input
+    //             .iter()
+    //             .filter(|txin| has_prevout(txin))
+    //             .map(|txin| txin.previous_output)
+    //     })
+    //     .collect()
+
+    let skip_output = get_skip_outpoint();
+    let entries = block_entries
+    .iter()
+    .flat_map(|b| {
+        let height = b.entry.height;
+        b.block.txdata.iter().flat_map(move |tx| {
             tx.input
                 .iter()
-                .filter(|txin| has_prevout(txin))
-                .map(|txin| txin.previous_output)
+                .filter(move |txin| {
+                    let ret = has_prevout(txin) && txin.previous_output != skip_output;
+                    // println!(
+                    //     "previous_output: {}, has_prevout: {}, height: {}",
+                    //     txin.previous_output, ret, height
+                    // );
+                    ret
+                })
+                .map(move |txin| {
+                    println!(
+                        "map: previous_output: {}, height: {}",
+                        txin.previous_output, height
+                    );
+                    // println!("height: {}", height);
+                    txin.previous_output
+                })
         })
-        .collect()
+    })
+    .collect();
+    entries
 }
 
 fn lookup_txos(txstore_db: &DB, outpoints: BTreeSet<OutPoint>) -> Result<HashMap<OutPoint, TxOut>> {
@@ -1026,8 +1000,10 @@ fn index_transaction(
             }
         }
     }
+
+    let skip_output = get_skip_outpoint();
     for (txi_index, txi) in tx.input.iter().enumerate() {
-        if !has_prevout(txi) {
+        if !has_prevout(txi) || txi.previous_output == skip_output {
             continue;
         }
         let prev_txo = previous_txos_map
@@ -1529,4 +1505,20 @@ impl GetAmountVal for satsnet::Amount {
     fn amount_value(self) -> u64 {
         self.to_sat()
     }
+}
+
+pub fn get_skip_outpoint() -> OutPoint {
+    let hash =
+        match Txid::from_str("0000000000000000000000000000000000000000000000000000000000000000") {
+            Ok(h) => h,
+            Err(e) => {
+                println!("Error parsing hash: {}", e);
+                panic!("Error parsing hash");
+            }
+        };
+    let skip_outpoint = OutPoint {
+        txid: hash,
+        vout: 4294967294,
+    };
+    skip_outpoint
 }

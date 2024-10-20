@@ -1,8 +1,8 @@
 ## Installation
 
 Install [latest Rust](https://rustup.rs/) (1.31+),
-[latest Bitcoin Core](https://bitcoincore.org/en/download/) (0.16+)
-and [latest Electrum wallet](https://electrum.org/#download) (3.2+).
+[latest satsnet Core](https://github.com/sat20-labs/satoshinet) (0.16+)
+
 
 Also, install the following packages (on Debian):
 ```bash
@@ -11,31 +11,36 @@ $ sudo apt install clang cmake  # for building 'rust-rocksdb'
 ```
 
 ## Build
-
-First build should take ~20 minutes:
 ```bash
 $ cargo build --release
 ```
 
 
-## Bitcoind configuration
+## satsnet configuration
 
-Allow Bitcoin daemon to sync before starting Electrum server:
+Allow satsnet daemon to sync before starting Electrum server:
 ```bash
-$ bitcoind -server=1 -txindex=0 -prune=0
+$ satsnet_btcd_l --homedir /data/satsnet/data --txindex
 ```
 
-If you are using `-rpcuser=USER` and `-rpcpassword=PASSWORD` for authentication, please use `--cookie="USER:PASSWORD"` command-line flag.
-Otherwise, [`~/.bitcoin/.cookie`](https://github.com/bitcoin/bitcoin/blob/0212187fc624ea4a02fc99bc57ebd413499a9ee1/contrib/debian/examples/bitcoin.conf#L70-L72) will be read, allowing this server to use bitcoind JSONRPC interface.
+satsnet Configure `-rpcuser=USER` and `-rpcpassword=PASSWORD` for authentication, please use `--cookie="USER:PASSWORD"` command-line flag.
 
 ## Usage
 
 First index sync should take ~1.5 hours:
 ```bash
-$ cargo run --release -- -vvv --timestamp --db-dir ./db [--cookie="USER:PASSWORD"]
-2018-08-17T18:27:42 - INFO - NetworkInfo { version: 179900, subversion: "/Satoshi:0.17.99/" }
-2018-08-17T18:27:42 - INFO - BlockchainInfo { chain: "main", blocks: 537204, headers: 537204, bestblockhash: "0000000000000000002956768ca9421a8ddf4e53b1d81e429bd0125a383e3636", pruned: false, initialblockdownload: false }
-2018-08-17T18:27:42 - DEBUG - opening DB at "./db/mainnet"
+$ cargo run --release -- -vvv --timestamp \
+    --cookie q17AIoqBJSEhW7djqjn0nTsZcz4=:nnlkAZn58bqsyYwVtHIajZ16cj8= \
+    --db-dir ./db --network testnet4 \
+    --daemon-rpc-addr 192.168.10.104:14827 --daemon-cert-path ./satsnet-rpc.cert \
+    --electrum-rpc-addr 0.0.0.0:50001 \
+    --http-addr 0.0.0.0:3000 \
+    --jsonrpc-import --cors "*" \
+    --address-search --index-unspendables \
+    --utxos-limit 5000 --electrum-txs-limit 5000
+2018-08-17T18:27:42 - INFO - NetworkInfo { version: 179900 }
+2018-08-17T18:27:42 - INFO - BlockchainInfo { chain: "main", blocks: 537204, headers: 537204, bestblockhash: "0000000000000000002956768ca9421a8ddf4e53b1d81e429bd0125a383e3636", pruned: false }
+2018-08-17T18:27:42 - DEBUG - opening DB at "./db/testnet4"
 2018-08-17T18:27:42 - DEBUG - full compaction marker: None
 2018-08-17T18:27:42 - INFO - listing block files at "/home/user/.bitcoin/blocks/blk*.dat"
 2018-08-17T18:27:42 - INFO - indexing 1348 blk*.dat files
@@ -44,7 +49,7 @@ $ cargo run --release -- -vvv --timestamp --db-dir ./db [--cookie="USER:PASSWORD
 2018-08-17T19:31:01 - DEBUG - no more blocks to index
 2018-08-17T19:31:03 - DEBUG - no more blocks to index
 2018-08-17T19:31:03 - DEBUG - last indexed block: best=0000000000000000002956768ca9421a8ddf4e53b1d81e429bd0125a383e3636 height=537204 @ 2018-08-17T15:24:02Z
-2018-08-17T19:31:05 - DEBUG - opening DB at "./db/mainnet"
+2018-08-17T19:31:05 - DEBUG - opening DB at "./db/testnet4"
 2018-08-17T19:31:06 - INFO - starting full compaction
 2018-08-17T19:58:19 - INFO - finished full compaction
 2018-08-17T19:58:19 - INFO - enabling auto-compactions

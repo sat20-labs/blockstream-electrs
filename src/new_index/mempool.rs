@@ -405,7 +405,7 @@ impl Mempool {
 
 
 
-    /// Sync our local view of the mempool with the bitcoind Daemon RPC. If the chain tip moves before
+    /// Sync our local view of the mempool with the satsnet Daemon RPC. If the chain tip moves before
     /// the mempool is fetched in full, syncing is aborted and an Ok(false) is returned.
     pub fn update(
         mempool: &Arc<RwLock<Mempool>>,
@@ -418,7 +418,7 @@ impl Mempool {
         let mut fetched_txs = HashMap::<Txid, Transaction>::new();
         let mut indexed_txids = mempool.read().unwrap().txids_set();
         loop {
-            // Get bitcoind's current list of mempool txids
+            // Get satsnet's current list of mempool txids
             let all_txids = daemon
                 .getmempooltxids()
                 .chain_err(|| "failed to update mempool from daemon")?;
@@ -432,7 +432,7 @@ impl Mempool {
             indexed_txids.retain(|txid| all_txids.contains(txid));
             fetched_txs.retain(|txid, _| all_txids.contains(txid));
 
-            // Fetch missing transactions from bitcoind
+            // Fetch missing transactions from satsnet
             let new_txids = all_txids
                 .iter()
                 .filter(|&txid| !fetched_txs.contains_key(txid) && !indexed_txids.contains(txid))

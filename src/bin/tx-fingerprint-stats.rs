@@ -15,7 +15,7 @@ fn main() {
         config::Config,
         daemon::Daemon,
         metrics::Metrics,
-        new_index::{ChainQuery, FetchFrom, Indexer, Store},
+        new_index::{ChainQuery, Indexer, Store},
         signal::Waiter,
         util::has_prevout,
     };
@@ -29,9 +29,8 @@ fn main() {
 
     let daemon = Arc::new(
         Daemon::new(
-            &config.daemon_dir,
-            &config.blocks_dir,
-            config.daemon_rpc_addr,
+            format!("https://{}", config.daemon_rpc_addr),
+            config.daemon_cert_path.clone(),
             config.daemon_parallelism,
             config.cookie_getter(),
             config.network_type,
@@ -41,9 +40,9 @@ fn main() {
         .unwrap(),
     );
 
-    let chain = ChainQuery::new(Arc::clone(&store), Arc::clone(&daemon), &config, &metrics);
+    let chain = ChainQuery::new(Arc::clone(&store), &config, &metrics);
 
-    let mut indexer = Indexer::open(Arc::clone(&store), FetchFrom::Bitcoind, &config, &metrics);
+    let mut indexer = Indexer::open(Arc::clone(&store), &config, &metrics);
     indexer.update(&daemon).unwrap();
 
     let mut iter = store.txstore_db().raw_iterator();

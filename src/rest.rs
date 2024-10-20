@@ -107,7 +107,13 @@ impl TransactionValue {
         txos: &HashMap<OutPoint, TxOut>,
         config: &Config,
     ) -> Self {
-        let prevouts = extract_tx_prevouts(&tx, &txos, true);
+        // let prevouts = extract_tx_prevouts(&tx, &txos, true);
+        let prevouts = if txos.is_empty() {
+            HashMap::new()
+        } else {
+            extract_tx_prevouts(&tx, txos, true)
+        };
+        
         let vins: Vec<TxInValue> = tx
             .input
             .iter()
@@ -116,13 +122,19 @@ impl TransactionValue {
                 TxInValue::new(txin, prevouts.get(&(index as u32)).cloned(), config)
             })
             .collect();
+
         let vouts: Vec<TxOutValue> = tx
             .output
             .iter()
             .map(|txout| TxOutValue::new(txout, config))
             .collect();
 
-        let fee = get_tx_fee(&tx, &prevouts, config.network_type);
+        // let fee = get_tx_fee(&tx, &prevouts, config.network_type);
+        let fee = if prevouts.len() == 0 {
+            0
+        } else {
+            get_tx_fee(&tx, &prevouts, config.network_type)
+        };
 
         let weight = tx.weight();
         // rust-bitcoin has a wrapper Weight type
@@ -323,15 +335,26 @@ fn prepare_txs(
     query: &Query,
     config: &Config,
 ) -> Vec<TransactionValue> {
+    // let outpoints = txs
+    //     .iter()
+    //     .flat_map(|(tx, _)| {
+    //         tx.input
+    //             .iter()
+    //             .filter(|txin| has_prevout(txin))
+    //             .map(|txin| txin.previous_output)
+    //     })
+    //     .collect();
+    let skip_output = crate::new_index::schema::get_skip_outpoint();
     let outpoints = txs
-        .iter()
-        .flat_map(|(tx, _)| {
-            tx.input
-                .iter()
-                .filter(|txin| has_prevout(txin))
-                .map(|txin| txin.previous_output)
-        })
-        .collect();
+            .iter()
+            .flat_map(|(tx, _)| {
+                tx.input
+                    .iter()
+                    .filter(|txin| has_prevout(txin))
+                    .map(|txin| txin.previous_output)
+    })
+    .filter(|outpoint| *outpoint != skip_output)
+    .collect();
 
     let prevouts = query.lookup_txos(outpoints);
 

@@ -37,9 +37,9 @@ impl From<&HeaderEntry> for BlockId {
 
 #[derive(Eq, PartialEq, Clone)]
 pub struct HeaderEntry {
-    height: usize,
-    hash: BlockHash,
-    header: BlockHeader,
+    pub height: usize,
+    pub hash: BlockHash,
+    pub header: BlockHeader,
 }
 
 impl HeaderEntry {
@@ -244,7 +244,7 @@ impl HeaderList {
     /// Get the Median Time Past
     pub fn get_mtp(&self, height: usize) -> u32 {
         // Use the timestamp as the mtp of the genesis block.
-        // Matches bitcoind's behaviour: bitcoin-cli getblock `bitcoin-cli getblockhash 0` | jq '.time == .mediantime'
+        // Matches satsnet's behaviour: bitcoin-cli getblock `bitcoin-cli getblockhash 0` | jq '.time == .mediantime'
         if height == 0 {
             self.headers.get(0).unwrap().header.time
         } else if height > self.len() - 1 {

@@ -1,6 +1,4 @@
 use clap::{App, Arg};
-use dirs::home_dir;
-use std::fs;
 use std::net::SocketAddr;
 use std::net::ToSocketAddrs;
 use std::path::{Path, PathBuf};
@@ -19,9 +17,8 @@ pub struct Config {
     pub log: stderrlog::StdErrLog,
     pub network_type: Network,
     pub db_path: PathBuf,
-    pub daemon_dir: PathBuf,
-    pub blocks_dir: PathBuf,
-    pub daemon_rpc_addr: SocketAddr,
+    pub daemon_rpc_addr: String,
+    pub daemon_cert_path: Option<PathBuf>,
     pub daemon_parallelism: usize,
     pub cookie: Option<String>,
     pub electrum_rpc_addr: SocketAddr,
@@ -29,7 +26,6 @@ pub struct Config {
     pub http_socket_file: Option<PathBuf>,
     pub monitoring_addr: SocketAddr,
     pub jsonrpc_import: bool,
-    pub light_mode: bool,
     pub address_search: bool,
     pub index_unspendables: bool,
     pub cors: Option<String>,
@@ -83,18 +79,6 @@ impl Config {
                     .takes_value(true),
             )
             .arg(
-                Arg::with_name("daemon_dir")
-                    .long("daemon-dir")
-                    .help("Data directory of Bitcoind (default: ~/.bitcoin/)")
-                    .takes_value(true),
-            )
-            .arg(
-                Arg::with_name("blocks_dir")
-                    .long("blocks-dir")
-                    .help("Analogous to bitcoind's -blocksdir option, this specifies the directory containing the raw blocks files (blk*.dat) (default: ~/.bitcoin/blocks/)")
-                    .takes_value(true),
-            )
-            .arg(
                 Arg::with_name("cookie")
                     .long("cookie")
                     .help("JSONRPC authentication cookie ('USER:PASSWORD', default: read from ~/.bitcoin/.cookie)")
@@ -125,6 +109,12 @@ impl Config {
                     .takes_value(true),
             )
             .arg(
+                Arg::with_name("daemon_cert_path")
+                    .long("daemon-cert-path")
+                    .help("Path to the btcd daemon TLS certificate")
+                    .takes_value(true)
+            )
+            .arg(
                 Arg::with_name("daemon_parallelism")
                     .long("daemon-parallelism")
                     .help("Number of JSONRPC requests to send in parallel")
@@ -140,11 +130,6 @@ impl Config {
                 Arg::with_name("jsonrpc_import")
                     .long("jsonrpc-import")
                     .help("Use JSONRPC instead of directly importing blk*.dat files. Useful for remote full node or low memory system"),
-            )
-            .arg(
-                Arg::with_name("light_mode")
-                    .long("lightmode")
-                    .help("Enable light mode for reduced storage")
             )
             .arg(
                 Arg::with_name("address_search")
@@ -193,6 +178,11 @@ impl Config {
                 Arg::with_name("initial_sync_compaction")
                     .long("initial-sync-compaction")
                     .help("Perform compaction during initial sync (slower but less disk space required)")
+            ).arg(
+                Arg::with_name("max_attempt_rpc_retries")
+                    .long("max-attempt-rpc-retries")
+                    .help("Maximum number of retries on RPC calls that may fail")
+                    .default_value("5")
             );
 
         #[cfg(unix)]
@@ -239,14 +229,15 @@ impl Config {
             Network::Testnet4 => 34224,
             Network::Regtest => 24224,
             Network::Signet => 54224,
-
         };
 
-        let daemon_rpc_addr: SocketAddr = str_to_socketaddr(
-            m.value_of("daemon_rpc_addr")
-                .unwrap_or(&format!("127.0.0.1:{}", default_daemon_port)),
-            "Bitcoin RPC",
-        );
+        let daemon_rpc_addr: String = m
+        .value_of("daemon_rpc_addr")
+        .map(String::from)
+        .unwrap_or_else(|| format!("127.0.0.1:{}", default_daemon_port));
+
+        let daemon_cert_path = m.value_of("daemon_cert_path").map(PathBuf::from);
+
         let electrum_rpc_addr: SocketAddr = str_to_socketaddr(
             m.value_of("electrum_rpc_addr")
                 .unwrap_or(&format!("127.0.0.1:{}", default_electrum_port)),
@@ -265,22 +256,6 @@ impl Config {
             "Prometheus monitoring",
         );
 
-        let mut daemon_dir = m
-            .value_of("daemon_dir")
-            .map(PathBuf::from)
-            .unwrap_or_else(|| {
-                let mut default_dir = home_dir().expect("no homedir");
-                default_dir.push(".bitcoin");
-                default_dir
-            });
-
-        if let Some(network_subdir) = get_network_subdir(network_type) {
-            daemon_dir.push(network_subdir);
-        }
-        let blocks_dir = m
-            .value_of("blocks_dir")
-            .map(PathBuf::from)
-            .unwrap_or_else(|| daemon_dir.join("blocks"));
         let cookie = m.value_of("cookie").map(|s| s.to_owned());
 
         let electrum_banner = m.value_of("electrum_banner").map_or_else(
@@ -302,9 +277,8 @@ impl Config {
             log,
             network_type,
             db_path,
-            daemon_dir,
-            blocks_dir,
             daemon_rpc_addr,
+            daemon_cert_path,
             daemon_parallelism: value_t_or_exit!(m, "daemon_parallelism", usize),
             cookie,
             utxos_limit: value_t_or_exit!(m, "utxos_limit", usize),
@@ -318,7 +292,6 @@ impl Config {
             http_socket_file,
             monitoring_addr,
             jsonrpc_import: m.is_present("jsonrpc_import"),
-            light_mode: m.is_present("light_mode"),
             address_search: m.is_present("address_search"),
             index_unspendables: m.is_present("index_unspendables"),
             cors: m.value_of("cors").map(|s| s.to_string()),
@@ -330,15 +303,10 @@ impl Config {
     }
 
     pub fn cookie_getter(&self) -> Arc<dyn CookieGetter> {
-        if let Some(ref value) = self.cookie {
             Arc::new(StaticCookie {
-                value: value.as_bytes().to_vec(),
+                value: self.cookie.as_ref().map_or(Vec::new(), |s| s.as_bytes().to_vec()),
             })
-        } else {
-            Arc::new(CookieFile {
-                daemon_dir: self.daemon_dir.clone(),
-            })
-        }
+        
     }
 }
 
@@ -365,15 +333,7 @@ impl From<&str> for RpcLogging {
     }
 }
 
-pub fn get_network_subdir(network: Network) -> Option<&'static str> {
-    match network {
-        Network::Bitcoin => None,
-        Network::Testnet => Some("testnet3"),
-        Network::Testnet4 => Some("testnet4"),
-        Network::Regtest => Some("regtest"),
-        Network::Signet => Some("signet"),
-    }
-}
+
 
 struct StaticCookie {
     value: Vec<u8>,
@@ -385,16 +345,3 @@ impl CookieGetter for StaticCookie {
     }
 }
 
-struct CookieFile {
-    daemon_dir: PathBuf,
-}
-
-impl CookieGetter for CookieFile {
-    fn get(&self) -> Result<Vec<u8>> {
-        let path = self.daemon_dir.join(".cookie");
-        let contents = fs::read(&path).chain_err(|| {
-            ErrorKind::Connection(format!("failed to read cookie from {:?}", path))
-        })?;
-        Ok(contents)
-    }
-}

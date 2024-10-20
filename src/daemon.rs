@@ -1,14 +1,17 @@
 use std::cell::OnceCell;
 use std::collections::{HashMap, HashSet};
+
+use std::fs;
+use std::io::Read;
+use std::fmt;
+
 use std::env;
-use std::io::{BufRead, BufReader, Lines, Write};
-use std::net::{SocketAddr, TcpStream};
 use std::path::PathBuf;
 use std::str::FromStr;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use base64::prelude::{Engine, BASE64_STANDARD};
+use base64::prelude::Engine;
 use error_chain::ChainedError;
 use hex::FromHex;
 use rayon::iter::{IndexedParallelIterator, IntoParallelIterator, ParallelIterator};
@@ -21,6 +24,12 @@ use crate::signal::Waiter;
 use crate::util::{HeaderList, DEFAULT_BLOCKHASH};
 
 use crate::errors::*;
+
+use log::{debug, info, warn};
+use openssl::x509::X509;
+
+use reqwest::blocking::{Client, Response};
+use reqwest::header::AUTHORIZATION;
 
 lazy_static! {
     static ref DAEMON_CONNECTION_TIMEOUT: Duration = Duration::from_secs(
@@ -118,15 +127,55 @@ pub struct BlockchainInfo {
     pub headers: u32,
     pub bestblockhash: String,
     pub pruned: bool,
-    pub verificationprogress: f32,
-    pub initialblockdownload: Option<bool>,
+    //TODO need implenent in satsnet/btcd
+    // pub verificationprogress: f32,
+    // pub initialblockdownload: Option<bool>,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct MempoolInfo {
+    pub size: u32,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
 struct NetworkInfo {
     version: u64,
-    subversion: String,
+    protocolversion: u64,
+    blocks: u64,
+    timeoffset: i64,
+    connections: u64,
+    proxy: String,
+    difficulty: f64,
+    testnet: bool,
     relayfee: f64, // in BTC/kB
+    errors: String,
+}
+
+impl fmt::Display for NetworkInfo {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "NetworkInfo {{ \
+            version: {}, \
+            protocolversion: {}, \
+            blocks: {}, \
+            timeoffset: {}, \
+            connections: {}, \
+            proxy: \"{}\", \
+            difficulty: {}, \
+            testnet: {}, \
+            relayfee: {}, \
+            errors: \"{}\" \
+        }}", 
+        self.version,
+        self.protocolversion,
+        self.blocks,
+        self.timeoffset,
+        self.connections,
+        self.proxy,
+        self.difficulty,
+        self.testnet,
+        self.relayfee,
+        self.errors)
+    }
 }
 
 pub trait CookieGetter: Send + Sync {
@@ -134,131 +183,77 @@ pub trait CookieGetter: Send + Sync {
 }
 
 struct Connection {
-    tx: TcpStream,
-    rx: Lines<BufReader<TcpStream>>,
+    client: Client,
     cookie_getter: Arc<dyn CookieGetter>,
-    addr: SocketAddr,
+    url: String,
+    cert_path: Option<PathBuf>,
     signal: Waiter,
-}
-
-fn tcp_connect(addr: SocketAddr, signal: &Waiter) -> Result<TcpStream> {
-    loop {
-        match TcpStream::connect_timeout(&addr, *DAEMON_CONNECTION_TIMEOUT) {
-            Ok(conn) => {
-                // can only fail if DAEMON_TIMEOUT is 0
-                conn.set_read_timeout(Some(*DAEMON_READ_TIMEOUT)).unwrap();
-                conn.set_write_timeout(Some(*DAEMON_WRITE_TIMEOUT)).unwrap();
-                return Ok(conn);
-            }
-            Err(err) => {
-                warn!(
-                    "failed to connect daemon at {}: {} (backoff 3 seconds)",
-                    addr, err
-                );
-                signal.wait(Duration::from_secs(3), false)?;
-                continue;
-            }
-        }
-    }
 }
 
 impl Connection {
     fn new(
-        addr: SocketAddr,
+        url: String,
+        cert_path: Option<PathBuf>,
         cookie_getter: Arc<dyn CookieGetter>,
         signal: Waiter,
     ) -> Result<Connection> {
-        let conn = tcp_connect(addr, &signal)?;
-        let reader = BufReader::new(
-            conn.try_clone()
-                .chain_err(|| format!("failed to clone {:?}", conn))?,
-        );
+        if let Some(ref path) = cert_path {
+            validate_cert_path(path)?;
+        }
+
+        let client = Client::builder()
+            .danger_accept_invalid_certs(cert_path.is_some())
+            .build()
+            .chain_err(|| "Failed to build client")?;
+
         Ok(Connection {
-            tx: conn,
-            rx: reader.lines(),
+            client,
             cookie_getter,
-            addr,
+            url,
+            cert_path,
             signal,
         })
     }
 
     fn reconnect(&self) -> Result<Connection> {
-        Connection::new(self.addr, self.cookie_getter.clone(), self.signal.clone())
+        Connection::new(
+            self.url.clone(),
+            self.cert_path.clone(),
+            self.cookie_getter.clone(),
+            self.signal.clone(),
+        )
     }
 
-    fn send(&mut self, request: &str) -> Result<()> {
-        let cookie = &self.cookie_getter.get()?;
-        let msg = format!(
-            "POST / HTTP/1.1\nAuthorization: Basic {}\nContent-Length: {}\n\n{}",
-            BASE64_STANDARD.encode(cookie),
-            request.len(),
-            request,
-        );
-        self.tx.write_all(msg.as_bytes()).chain_err(|| {
-            ErrorKind::Connection("disconnected from daemon while sending".to_owned())
-        })
+    fn send(&self, request: &str) -> Result<Response> {
+        let cookie = self.cookie_getter.get()?;
+        let url = &self.url;
+
+        // let body = request.to_string();
+        // println!("send body: {}", body);
+        let response = self
+            .client
+            .post(url)
+            .header(AUTHORIZATION, format!("Basic {}", base64::engine::general_purpose::STANDARD.encode(cookie)))
+            .header(reqwest::header::CONTENT_TYPE, "application/json")
+            .body(request.to_string())
+            .send()
+            .chain_err(|| "Failed to send request")?;
+
+        Ok(response)
     }
 
-    fn recv(&mut self) -> Result<String> {
-        // TODO: use proper HTTP parser.
-        let mut in_header = true;
-        let mut contents: Option<String> = None;
-        let iter = self.rx.by_ref();
-        let status = iter
-            .next()
-            .chain_err(|| {
-                ErrorKind::Connection("disconnected from daemon while receiving".to_owned())
-            })?
-            .chain_err(|| ErrorKind::Connection("failed to read status".to_owned()))?;
-        let mut headers = HashMap::new();
-        for line in iter {
-            let line = line.chain_err(|| ErrorKind::Connection("failed to read".to_owned()))?;
-            if line.is_empty() {
-                in_header = false; // next line should contain the actual response.
-            } else if in_header {
-                let parts: Vec<&str> = line.splitn(2, ": ").collect();
-                if parts.len() == 2 {
-                    headers.insert(parts[0].to_owned(), parts[1].to_owned());
-                } else {
-                    warn!("invalid header: {:?}", line);
-                }
-            } else {
-                contents = Some(line);
-                break;
-            }
-        }
+    fn recv(response: Response) -> Result<String> {
+        let status = response.status();
+        let contents = response
+            .text()
+            .chain_err(|| "Failed to read response text")?;
 
-        let contents =
-            contents.chain_err(|| ErrorKind::Connection("no reply from daemon".to_owned()))?;
-        let contents_length: &str = headers
-            .get("Content-Length")
-            .chain_err(|| format!("Content-Length is missing: {:?}", headers))?;
-        let contents_length: usize = contents_length
-            .parse()
-            .chain_err(|| format!("invalid Content-Length: {:?}", contents_length))?;
-
-        let expected_length = contents_length - 1; // trailing EOL is skipped
-        if expected_length != contents.len() {
-            bail!(ErrorKind::Connection(format!(
-                "expected {} bytes, got {}",
-                expected_length,
-                contents.len()
-            )));
-        }
-
-        Ok(if status == "HTTP/1.1 200 OK" {
-            contents
-        } else if status == "HTTP/1.1 500 Internal Server Error" {
-            debug!("RPC HTTP 500 error: {}", contents);
-            contents // the contents should have a JSONRPC error field
+        // println!("recv contents: {}", contents);
+        if status.is_success() {
+            Ok(contents)
         } else {
-            bail!(
-                "request failed {:?}: {:?} = {:?}",
-                status,
-                headers,
-                contents
-            );
-        })
+            bail!("HTTP error: {}, Response: {}", status, contents);
+        }
     }
 }
 
@@ -281,8 +276,6 @@ impl Counter {
 }
 
 pub struct Daemon {
-    daemon_dir: PathBuf,
-    blocks_dir: PathBuf,
     network: Network,
     conn: Mutex<Connection>,
     message_id: Counter, // for monotonic JSONRPC 'id'
@@ -297,9 +290,8 @@ pub struct Daemon {
 
 impl Daemon {
     pub fn new(
-        daemon_dir: &PathBuf,
-        blocks_dir: &PathBuf,
-        daemon_rpc_addr: SocketAddr,
+        daemon_rpc_url: String,
+        daemon_cert_path: Option<PathBuf>,
         daemon_parallelism: usize,
         cookie_getter: Arc<dyn CookieGetter>,
         network: Network,
@@ -307,11 +299,10 @@ impl Daemon {
         metrics: &Metrics,
     ) -> Result<Daemon> {
         let daemon = Daemon {
-            daemon_dir: daemon_dir.clone(),
-            blocks_dir: blocks_dir.clone(),
             network,
             conn: Mutex::new(Connection::new(
-                daemon_rpc_addr,
+                daemon_rpc_url.clone(),
+                daemon_cert_path,
                 cookie_getter,
                 signal.clone(),
             )?),
@@ -335,29 +326,48 @@ impl Daemon {
         };
         let network_info = daemon.getnetworkinfo()?;
         info!("{:?}", network_info);
-        if network_info.version < 16_00_00 {
+        if network_info.version < 24_02_00 {
             bail!(
-                "{} is not supported - please use bitcoind 0.16+",
-                network_info.subversion,
+                "{} is not supported - please use satsnet x.xx+?",
+                network_info,
             )
         }
         let blockchain_info = daemon.getblockchaininfo()?;
         info!("{:?}", blockchain_info);
+
         if blockchain_info.pruned {
-            bail!("pruned node is not supported (use '-prune=0' bitcoind flag)".to_owned())
+            bail!("pruned node is not supported (use '-prune=0' satsnet flag)".to_owned())
         }
+
+        let mempool = daemon.getmempoolinfo()?;
+        info!("{:?}", mempool);
+        
         loop {
             let info = daemon.getblockchaininfo()?;
+            let mempool = daemon.getmempoolinfo()?;
 
-            if !info.initialblockdownload.unwrap_or(false) && info.blocks == info.headers {
+            let ibd_done = if network.is_regtest() {
+                info.blocks == info.headers
+            } else {
+                // !info.initialblockdownload.unwrap_or(false)
+                true
+            };
+
+            if ibd_done && info.blocks == info.headers {
                 break;
             }
 
+            // if mempool.size > 0 && ibd_done && info.blocks == info.headers {
+            //     break;
+            // }
+
             warn!(
-                "waiting for bitcoind sync to finish: {}/{} blocks, verification progress: {:.3}%",
+                "waiting for btcd sync and mempool load to finish: {}/{} blocks, verification progress: {:.3}%, mempool loaded: {}",
                 info.blocks,
                 info.headers,
-                info.verificationprogress * 100.0
+                100.0,
+                // info.verificationprogress * 100.0,
+                mempool.size
             );
             signal.wait(Duration::from_secs(5), false)?;
         }
@@ -366,8 +376,6 @@ impl Daemon {
 
     pub fn reconnect(&self) -> Result<Daemon> {
         Ok(Daemon {
-            daemon_dir: self.daemon_dir.clone(),
-            blocks_dir: self.blocks_dir.clone(),
             network: self.network,
             conn: Mutex::new(self.conn.lock().unwrap().reconnect()?),
             message_id: Counter::new(),
@@ -378,41 +386,30 @@ impl Daemon {
         })
     }
 
-    pub fn list_blk_files(&self) -> Result<Vec<PathBuf>> {
-        let path = self.blocks_dir.join("blk*.dat");
-        debug!("listing block files at {:?}", path);
-        let mut paths: Vec<PathBuf> = glob::glob(path.to_str().unwrap())
-            .chain_err(|| "failed to list blk*.dat files")?
-            .map(|res| res.unwrap())
-            .collect();
-        paths.sort();
-        Ok(paths)
-    }
-
     pub fn magic(&self) -> u32 {
         self.network.magic()
     }
 
     fn call_jsonrpc(&self, method: &str, request: &Value) -> Result<Value> {
-        let mut conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock().unwrap();
         let timer = self.latency.with_label_values(&[method]).start_timer();
         let request = request.to_string();
-        conn.send(&request)?;
+        let response = conn.send(&request)?;
         self.size
             .with_label_values(&[method, "send"])
             .observe(request.len() as f64);
-        let response = conn.recv()?;
-        let result: Value = from_str(&response).chain_err(|| "invalid JSON")?;
+        let response_text = Connection::recv(response)?;
+        let result: Value = from_str(&response_text).chain_err(|| "invalid JSON")?;
         timer.observe_duration();
         self.size
             .with_label_values(&[method, "recv"])
-            .observe(response.len() as f64);
+            .observe(response_text.len() as f64);
         Ok(result)
     }
 
     fn handle_request(&self, method: &str, params: &Value) -> Result<Value> {
         let id = self.message_id.next();
-        let req = json!({"method": method, "params": params, "id": id});
+        let req = json!({"jsonrpc":"1.0", "method": method, "params": params, "id": id});
         let reply = self.call_jsonrpc(method, &req)?;
         parse_jsonrpc_reply(reply, method, id)
     }
@@ -421,7 +418,7 @@ impl Daemon {
         loop {
             match self.handle_request(method, &params) {
                 Err(e @ Error(ErrorKind::Connection(_), _)) => {
-                    warn!("reconnecting to bitcoind: {}", e.display_chain());
+                    warn!("reconnecting to satsnet: {}", e.display_chain());
                     self.signal.wait(Duration::from_secs(3), false)?;
                     let mut conn = self.conn.lock().unwrap();
                     *conn = conn.reconnect()?;
@@ -476,15 +473,20 @@ impl Daemon {
         })
     }
 
-    // bitcoind JSONRPC API:
+    // satsnet JSONRPC API:
 
     pub fn getblockchaininfo(&self) -> Result<BlockchainInfo> {
         let info: Value = self.request("getblockchaininfo", json!([]))?;
         Ok(from_value(info).chain_err(|| "invalid blockchain info")?)
     }
 
+    fn getmempoolinfo(&self) -> Result<MempoolInfo> {
+        let info: Value = self.request("getmempoolinfo", json!([]))?;
+        from_value(info).chain_err(|| "invalid mempool info")
+    }
+
     fn getnetworkinfo(&self) -> Result<NetworkInfo> {
-        let info: Value = self.request("getnetworkinfo", json!([]))?;
+        let info: Value = self.request("getinfo", json!([]))?;
         Ok(from_value(info).chain_err(|| "invalid network info")?)
     }
 
@@ -524,7 +526,7 @@ impl Daemon {
     pub fn getblocks(&self, blockhashes: &[BlockHash]) -> Result<Vec<Block>> {
         let params_list: Vec<Value> = blockhashes
             .iter()
-            .map(|hash| json!([hash, /*verbose=*/ false]))
+            .map(|hash| json!([hash, /*verbose=*/ 0]))
             .collect();
 
         let mut attempts = MAX_ATTEMPTS;
@@ -538,13 +540,16 @@ impl Daemon {
                     if err_msg.contains("Block not found on disk") {
                         // There is a small chance the node returns the header but didn't finish to index the block
                         log::warn!("getblocks failing with: {e:?} trying {attempts} more time")
+                    } else if err_msg.contains("HTTP error: 503 Service Unavailable") {
+                        log::warn!("getblocks failing with: {e:?} trying {attempts} more time")
+                        // The node might return a block that is not indexed yet
                     } else {
-                        panic!("failed to get blocks from bitcoind: {}", err_msg);
+                        panic!("failed to get blocks from satsnet: {}", err_msg);
                     }
                 }
             }
             if attempts == 0 {
-                panic!("failed to get blocks from bitcoind")
+                panic!("failed to get blocks from satsnet")
             }
             std::thread::sleep(RETRY_WAIT_DURATION);
         };
@@ -714,4 +719,14 @@ impl Daemon {
         // from BTC/kB to sat/b
         Ok(relayfee * 100_000f64)
     }
+}
+
+fn validate_cert_path(cert_path: &PathBuf) -> Result<()> {
+    let mut file = fs::File::open(cert_path).chain_err(|| "Failed to open cert file")?;
+    let mut buffer = Vec::new();
+    file.read_to_end(&mut buffer)
+        .chain_err(|| "Failed to read cert file")?;
+    X509::from_pem(&buffer).chain_err(|| "Invalid certificate")?;
+
+    Ok(())
 }

@@ -15,28 +15,12 @@ use electrs::{
     electrum::RPC as ElectrumRPC,
     errors::*,
     metrics::Metrics,
-    new_index::{precache, ChainQuery, FetchFrom, Indexer, Mempool, Query, Store},
+    new_index::{precache, ChainQuery, Indexer, Mempool, Query, Store},
     rest,
     signal::Waiter,
 };
 
 use electrs::metrics::MetricOpts;
-
-fn fetch_from(config: &Config, store: &Store) -> FetchFrom {
-    let mut jsonrpc_import = config.jsonrpc_import;
-    if !jsonrpc_import {
-        // switch over to jsonrpc after the initial sync is done
-        jsonrpc_import = store.done_initial_sync();
-    }
-
-    if jsonrpc_import {
-        // slower, uses JSONRPC (good for incremental updates)
-        FetchFrom::Bitcoind
-    } else {
-        // faster, uses blk*.dat files (good for initial indexing)
-        FetchFrom::BlkFiles
-    }
-}
 
 fn run_server(config: Arc<Config>) -> Result<()> {
     let signal = Waiter::start();
@@ -44,9 +28,8 @@ fn run_server(config: Arc<Config>) -> Result<()> {
     metrics.start();
 
     let daemon = Arc::new(Daemon::new(
-        &config.daemon_dir,
-        &config.blocks_dir,
-        config.daemon_rpc_addr,
+        format!("https://{}", config.daemon_rpc_addr),
+        config.daemon_cert_path.clone(),
         config.daemon_parallelism,
         config.cookie_getter(),
         config.network_type,
@@ -56,7 +39,6 @@ fn run_server(config: Arc<Config>) -> Result<()> {
     let store = Arc::new(Store::open(&config.db_path.join("newindex"), &config));
     let mut indexer = Indexer::open(
         Arc::clone(&store),
-        fetch_from(&config, &store),
         &config,
         &metrics,
     );
@@ -64,7 +46,6 @@ fn run_server(config: Arc<Config>) -> Result<()> {
 
     let chain = Arc::new(ChainQuery::new(
         Arc::clone(&store),
-        Arc::clone(&daemon),
         &config,
         &metrics,
     ));

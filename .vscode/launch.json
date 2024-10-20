@@ -46,6 +46,8 @@
                 "./data",
                 "--daemon-rpc-addr",
                 "192.168.10.104:14827",
+                "--daemon-cert-path",
+                "./satsnet-rpc.cert",
                 "--jsonrpc-import",
                 "--network",
                 "testnet4",

@@ -102,7 +102,7 @@ impl DB {
         let db = DB {
             db: rocksdb::DB::open(&db_opts, path).expect("failed to open RocksDB"),
         };
-        db.verify_compatibility(config);
+        db.verify_compatibility();
         db
     }
 
@@ -201,16 +201,8 @@ impl DB {
         self.db.multi_get(keys)
     }
 
-    fn verify_compatibility(&self, config: &Config) {
-        let mut compatibility_bytes = bincode::serialize_little(&DB_VERSION).unwrap();
-
-        if config.light_mode {
-            // append a byte to indicate light_mode is enabled.
-            // we're not letting bincode serialize this so that the compatiblity bytes won't change
-            // (and require a reindex) when light_mode is disabled. this should be chagned the next
-            // time we bump DB_VERSION and require a re-index anyway.
-            compatibility_bytes.push(1);
-        }
+    fn verify_compatibility(&self) {
+        let compatibility_bytes = bincode::serialize_little(&DB_VERSION).unwrap();
 
         match self.get(b"V") {
             None => self.put(b"V", &compatibility_bytes),
