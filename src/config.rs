@@ -203,7 +203,7 @@ impl Config {
         let default_daemon_port = match network_type {
             Network::Bitcoin => 8332,
             Network::Testnet => 18332,
-            Network::Testnet4 => 28332,
+            Network::Testnet4 => 14827,
             Network::Regtest => 18443,
             Network::Signet => 38332,
         };
