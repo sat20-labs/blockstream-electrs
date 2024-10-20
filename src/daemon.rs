@@ -617,6 +617,7 @@ impl Daemon {
         )
     }
 
+    // TODO need implement estimatesmartfee in satsnet
     // Get estimated feerates for the provided confirmation targets using a batch RPC request
     // Missing estimates are logged but do not cause a failure, whatever is available is returned
     #[allow(clippy::float_cmp)]
