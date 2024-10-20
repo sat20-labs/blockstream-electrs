@@ -127,7 +127,7 @@ pub struct BlockchainInfo {
     pub headers: u32,
     pub bestblockhash: String,
     pub pruned: bool,
-    //TODO need implenent in satsnet/btcd
+    //TODO need implenent in satsnet
     // pub verificationprogress: f32,
     // pub initialblockdownload: Option<bool>,
 }
@@ -362,7 +362,7 @@ impl Daemon {
             // }
 
             warn!(
-                "waiting for btcd sync and mempool load to finish: {}/{} blocks, verification progress: {:.3}%, mempool loaded: {}",
+                "waiting for satsnet sync and mempool load to finish: {}/{} blocks, verification progress: {:.3}%, mempool loaded: {}",
                 info.blocks,
                 info.headers,
                 100.0,

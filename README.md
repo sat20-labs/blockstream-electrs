@@ -19,8 +19,8 @@ $ cargo run --release --bin electrs -- -vvvv \
     --cookie q17AIoqBJSEhW7djqjn0nTsZcz4=:nnlkAZn58bqsyYwVtHIajZ16cj8= \
     --db-dir ./data --network testnet4 \
     --daemon-rpc-addr 192.168.10.104:14827 --daemon-cert-path ./satsnet-rpc.cert \
-    --electrum-rpc-addr 0.0.0.0:50001 \
-    --http-addr 0.0.0.0:3000 \
+    --electrum-rpc-addr 0.0.0.0:60301 \
+    --http-addr 0.0.0.0:3004 \
     --jsonrpc-import --cors "*" \
     --address-search --index-unspendables \
     --utxos-limit 5000 --electrum-txs-limit 5000

@@ -111,7 +111,7 @@ impl Config {
             .arg(
                 Arg::with_name("daemon_cert_path")
                     .long("daemon-cert-path")
-                    .help("Path to the btcd daemon TLS certificate")
+                    .help("Path to the satsnet daemon TLS certificate")
                     .takes_value(true)
             )
             .arg(
