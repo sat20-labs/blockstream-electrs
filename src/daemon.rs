@@ -590,13 +590,13 @@ impl Daemon {
         &self,
         txid: &Txid,
         blockhash: &BlockHash,
-        verbose: bool,
+        verbose: u32,
     ) -> Result<Value> {
         self.request("getrawtransaction", json!([txid, verbose, blockhash]))
     }
 
     pub fn getmempooltx(&self, txhash: &Txid) -> Result<Transaction> {
-        let value = self.request("getrawtransaction", json!([txhash, /*verbose=*/ false]))?;
+        let value = self.request("getrawtransaction", json!([txhash, /*verbose=*/ 0]))?;
         tx_from_value(value)
     }
 
