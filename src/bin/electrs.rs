@@ -42,7 +42,23 @@ fn run_server(config: Arc<Config>) -> Result<()> {
         &config,
         &metrics,
     );
-    let mut tip = indexer.update(&daemon)?;
+    // let mut tip = indexer.update(&daemon)?;
+    let mut tip = loop {
+        match indexer.update(&daemon) {
+            Ok(tip) => break tip,
+            Err(e) => {
+                let error_message = e.to_string();
+                // error!("Error updating indexer: {}", error_message);
+                if error_message.contains("tcp connect error") {
+                    error!("TCP connection error detected: {}, Retrying in 5 seconds...", e);
+                    std::thread::sleep(Duration::from_secs(5));
+                } else {
+                    error!("Fatal error occurred: {}, Exiting.", e);
+                    return Err(e);
+                }
+            }
+        }
+    };
 
     let chain = Arc::new(ChainQuery::new(
         Arc::clone(&store),
@@ -62,10 +78,45 @@ fn run_server(config: Arc<Config>) -> Result<()> {
         Arc::clone(&config),
     )));
 
-    while !Mempool::update(&mempool, &daemon, &tip)? {
-        // Mempool syncing was aborted because the chain tip moved;
-        // Index the new block(s) and try again.
-        tip = indexer.update(&daemon)?;
+    // while !Mempool::update(&mempool, &daemon, &tip)? {
+    //     // Mempool syncing was aborted because the chain tip moved;
+    //     // Index the new block(s) and try again.
+    //     tip = indexer.update(&daemon)?;
+    // }
+    loop {
+        match Mempool::update(&mempool, &daemon, &tip) {
+            Ok(true) => break,
+            Ok(false) => {
+                // Mempool syncing was aborted because the chain tip moved;
+                // Index the new block(s) and try again.
+                match indexer.update(&daemon) {
+                    Ok(new_tip) => {
+                        tip = new_tip;
+                        info!("Chain tip moved. Updated to new tip: {:?}", tip);
+                    },
+                    Err(e) => {
+                        let error_message = e.to_string();
+                        if error_message.contains("tcp connect error") {
+                            error!("Error updating indexer: {}, Retrying in 5 seconds...", e);
+                            std::thread::sleep(Duration::from_secs(5));
+                        } else {
+                            error!("Error updating indexer: {}", e);
+                            return Err(e);
+                        }
+                    }
+                }
+            },
+            Err(e) => {
+                let error_message = e.to_string();
+                if error_message.contains("tcp connect error") {
+                    error!("Error updating mempool: {}, Retrying in 5 seconds...", e);
+                    std::thread::sleep(Duration::from_secs(5));
+                } else {
+                    error!("Fatal updating mempool: {}, Exiting.", e);
+                    return Err(e);
+                }
+            }
+        }
     }
 
     let query = Arc::new(Query::new(
@@ -95,14 +146,60 @@ fn run_server(config: Arc<Config>) -> Result<()> {
         }
 
         // Index new blocks
-        let current_tip = daemon.getbestblockhash()?;
-        if current_tip != tip {
-            tip = indexer.update(&daemon)?;
-        };
+        // let current_tip = daemon.getbestblockhash()?;
+        // if current_tip != tip {
+        //     tip = indexer.update(&daemon)?;
+        // };
+        match daemon.getbestblockhash() {
+            Ok(current_tip) => {
+                if current_tip != tip {
+                    match indexer.update(&daemon) {
+                        Ok(new_tip) => tip = new_tip,
+                        Err(e) => {
+                            let error_message = e.to_string();
+                            if error_message.contains("tcp connect error") {
+                                error!("Error updating indexer: {}, Retrying in 5 seconds...", e);
+                                std::thread::sleep(Duration::from_secs(5));
+                                continue;
+                            } else {
+                                error!("Fatal error updating indexer: {}, Exiting.", e);
+                                return Err(e);
+                            }
+                        }
+                    }
+                }
+            },
+            Err(e) => {
+                let error_message = e.to_string();
+                if error_message.contains("tcp connect error") {
+                    error!("Error getting best block hash: {}, Retrying in 5 seconds...", e);
+                    std::thread::sleep(Duration::from_secs(5));
+                    continue;
+                } else {
+                    error!("Fatal error getting best block hash: {}, Exiting.", e);
+                    return Err(e);
+                }
+            }
+        }
 
         // Update mempool
-        if !Mempool::update(&mempool, &daemon, &tip)? {
-            warn!("skipped failed mempool update, trying again in 5 seconds");
+        // if !Mempool::update(&mempool, &daemon, &tip)? {
+        //     warn!("skipped failed mempool update, trying again in 5 seconds");
+        // }
+        match Mempool::update(&mempool, &daemon, &tip) {
+            Ok(true) => {},
+            Ok(false) => warn!("Skipped failed mempool update, trying again in 5 seconds"),
+            Err(e) => {
+                let error_message = e.to_string();
+                if error_message.contains("tcp connect error") {
+                    error!("Error updating mempool: {}, Retrying in 5 seconds...", e);
+                    std::thread::sleep(Duration::from_secs(5));
+                    continue;
+                } else {
+                    error!("Fatal error updating mempool: {}, Exiting.", e);
+                    return Err(e);
+                }
+            }
         }
 
         // Update subscribed clients
