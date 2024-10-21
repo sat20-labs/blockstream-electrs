@@ -925,11 +925,17 @@ fn get_previous_txos(block_entries: &[BlockEntry]) -> BTreeSet<OutPoint> {
 }
 
 fn lookup_txos(txstore_db: &DB, outpoints: BTreeSet<OutPoint>) -> Result<HashMap<OutPoint, TxOut>> {
-    let keys = outpoints.iter().map(TxOutRow::key).collect::<Vec<_>>();
+    let skip_outpoint = get_skip_outpoint();
+    let filtered_outpoints: BTreeSet<OutPoint> = outpoints
+        .into_iter()
+        .filter(|outpoint| *outpoint != skip_outpoint)
+        .collect();
+    let keys = filtered_outpoints.iter().map(TxOutRow::key).collect::<Vec<_>>();
+    
     txstore_db
         .multi_get(keys)
         .into_iter()
-        .zip(outpoints)
+        .zip(filtered_outpoints)
         .map(|(res, outpoint)| {
             let txo = res
                 .unwrap()
@@ -1508,17 +1514,5 @@ impl GetAmountVal for satsnet::Amount {
 }
 
 pub fn get_skip_outpoint() -> OutPoint {
-    let hash =
-        match Txid::from_str("0000000000000000000000000000000000000000000000000000000000000000") {
-            Ok(h) => h,
-            Err(e) => {
-                println!("Error parsing hash: {}", e);
-                panic!("Error parsing hash");
-            }
-        };
-    let skip_outpoint = OutPoint {
-        txid: hash,
-        vout: 4294967294,
-    };
-    skip_outpoint
+    OutPoint {txid: Txid::from_str("0000000000000000000000000000000000000000000000000000000000000000").unwrap(),vout: 4294967294,}
 }
