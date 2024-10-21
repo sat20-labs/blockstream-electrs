@@ -973,7 +973,11 @@ fn index_blocks(
                 let height = b.entry.height() as u32;
                 index_transaction(tx, height, previous_txos_map, &mut rows, iconfig);
             }
-            rows.push(BlockRow::new_done(full_hash(&b.entry.hash()[..])).into_row()); // mark block as "indexed"
+            let block_hash = b.entry.hash();
+            let full_hash_data= full_hash(&block_hash[..]);
+            let block_row = BlockRow::new_done(full_hash_data);
+            let row = block_row.into_row();
+            rows.push(row); // mark block as "indexed"
             rows
         })
         .flatten()
