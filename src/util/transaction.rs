@@ -57,15 +57,20 @@ pub fn extract_tx_prevouts<'a>(
     txos: &'a HashMap<OutPoint, TxOut>,
     allow_missing: bool,
 ) -> HashMap<u32, &'a TxOut> {
+    let skip_output = crate::new_index::schema::get_skip_outpoint();
     tx.input
         .iter()
         .enumerate()
-        .filter(|(_, txi)| has_prevout(txi))
+        .filter(|(_, txi)| has_prevout(txi) && txi.previous_output != skip_output)
         .filter_map(|(index, txi)| {
             Some((
                 index as u32,
                 txos.get(&txi.previous_output).or_else(|| {
-                    assert!(allow_missing, "missing outpoint {:?}", txi.previous_output);
+                    // assert!(allow_missing, "missing outpoint {:?}", txi.previous_output);
+                    if !allow_missing {
+                        error!("Missing outpoint: {:?}", txi.previous_output);
+                        debug_assert!(false, "missing outpoint {:?}", txi.previous_output);
+                    }
                     None
                 })?,
             ))
