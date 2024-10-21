@@ -567,7 +567,7 @@ impl Daemon {
 
         let params_list: Vec<Value> = txids
             .iter()
-            .map(|txhash| json!([txhash, /*verbose=*/ false]))
+            .map(|txhash| json!([txhash, /*verbose=*/ 0]))
             .collect();
 
         self.requests_iter("getrawtransaction", params_list)
