@@ -356,7 +356,10 @@ fn prepare_txs(
     .filter(|outpoint| *outpoint != skip_output)
     .collect();
 
-    let prevouts = query.lookup_txos(outpoints);
+    let mut prevouts = query.lookup_txos(outpoints);
+    
+    // filter out the skip_outpoint
+    prevouts.retain(|outpoint, _| *outpoint != crate::new_index::schema::get_skip_outpoint());
 
     txs.into_iter()
         .map(|(tx, blockid)| TransactionValue::new(tx, blockid, &prevouts, config))

@@ -276,12 +276,15 @@ impl Mempool {
         // Lookup remaining spent prevouts in mempool & on-chain
         // Fails if any are missing.
         txos.extend(self.lookup_txos(remain_prevouts)?);
+        // filter out the skip_outpoint
+        txos.retain(|outpoint, _| *outpoint != crate::new_index::schema::get_skip_outpoint());
 
         // Add to txstore and indexes
         for (txid, tx) in txs_map {
             self.txstore.insert(txid, tx);
             let tx = self.txstore.get(&txid).expect("was just added");
 
+            
             let prevouts = extract_tx_prevouts(&tx, &txos, false);
             let txid_bytes = full_hash(&txid[..]);
 
