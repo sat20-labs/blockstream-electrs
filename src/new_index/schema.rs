@@ -292,7 +292,16 @@ impl Indexer {
         };
         let rows = {
             let _timer = self.start_timer("index_process");
-            let added_blockhashes = self.store.added_blockhashes.read().unwrap();
+
+            // let added_blockhashes = self.store.added_blockhashes.read().unwrap();
+            let added_blockhashes = match self.store.added_blockhashes.read() {
+                Ok(guard) => guard,
+                Err(e) => {
+                    eprintln!("Error reading added_blockhashes: {}", e);
+                    panic!("Failed to acquire read lock on added_blockhashes: {}", e);
+                }
+            };
+            
             for b in blocks {
                 let blockhash = b.entry.hash();
                 // TODO: replace by lookup into txstore_db?
