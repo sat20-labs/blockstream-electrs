@@ -64,6 +64,9 @@
                 "--electrum-txs-limit",
                 "5000",
             ],
+            "env": {
+                "RUST_BACKTRACE": "0"
+            },
             "cwd": "${workspaceFolder}"
         },
         {

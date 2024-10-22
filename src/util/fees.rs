@@ -11,7 +11,12 @@ pub struct TxFeeInfo {
 
 impl TxFeeInfo {
     pub fn new(tx: &Transaction, prevouts: &HashMap<u32, &TxOut>, network: Network) -> Self {
-        let fee = get_tx_fee(tx, prevouts, network);
+        // let fee = get_tx_fee(tx, prevouts, network);
+        let fee = if prevouts.len() == 0 {
+            0
+        } else {
+            get_tx_fee(&tx, &prevouts, network)
+        };
 
         let weight = tx.weight();
         // rust-bitcoin has a wrapper Weight type
