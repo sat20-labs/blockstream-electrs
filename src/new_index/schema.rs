@@ -227,7 +227,7 @@ impl Indexer {
     }
 
     pub fn update(&mut self, daemon: &Daemon) -> Result<BlockHash> {
-        let daemon = daemon.reconnect()?;
+        let daemon = Arc::new(daemon.reconnect()?);
         let tip = daemon.getbestblockhash()?;
         let new_headers = self.get_new_headers(&daemon, &tip)?;
 
@@ -236,7 +236,9 @@ impl Indexer {
             "adding transactions from {}",
             to_add.len()
         );
-        start_fetcher(&daemon, to_add)?.map(|blocks| self.add(&blocks));
+        log::info!("call satsnet_fetcher add begin");
+        start_fetcher(Arc::clone(&daemon), to_add)?.map(|blocks| self.add(&blocks));
+        log::info!("call satsnet_fetcher add end");
         self.start_auto_compactions(&self.store.txstore_db);
 
         let to_index = self.headers_to_index(&new_headers);
@@ -244,7 +246,9 @@ impl Indexer {
             "indexing history from {}",
             to_index.len()
         );
-        start_fetcher(&daemon, to_index)?.map(|blocks| self.index(&blocks));
+        log::info!("call satsnet_fetcher index begin");
+        start_fetcher(Arc::clone(&daemon), to_index)?.map(|blocks| self.index(&blocks));
+        log::info!("call satsnet_fetcher index end");
         self.start_auto_compactions(&self.store.history_db);
 
         if let DBFlush::Disable = self.flush {
