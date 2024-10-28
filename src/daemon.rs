@@ -237,7 +237,13 @@ impl Connection {
             .header(reqwest::header::CONTENT_TYPE, "application/json")
             .body(request.to_string())
             .send()
-            .chain_err(|| "Failed to send request")?;
+            .chain_err(|| {
+                ErrorKind::RpcError(
+                    -1, // 使用一个通用的错误代码，比如 -1 表示网络错误
+                    json!("send: Connection error"), // 使用 serde_json::json! 宏创建一个简单的 JSON 值
+                    request.to_string() // 方法名
+                )
+            })?;
 
         Ok(response)
     }
@@ -424,8 +430,19 @@ impl Daemon {
                     // error!("Request failed (attempt {}): {} - {}", retry_count, method, e.display_chain());
                     
                     match e.kind() {
-                        ErrorKind::Connection(_) => {
-                            warn!("Connection error, reconnecting to satsnet (attempt {}): {} - {}", retry_count, method, e.display_chain());
+                        ErrorKind::Connection(msg) => {
+                            warn!("Connection error, reconnecting to satsnet (attempt {}): method: {} - error:{}, msg: {}", retry_count, method, e.display_chain(), msg);
+                            self.signal.wait(Duration::from_secs(3), false)?;
+                            let mut conn = self.conn.lock().unwrap();
+                            match conn.reconnect() {
+                                Ok(new_conn) => *conn = new_conn,
+                                Err(reconnect_err) => {
+                                    error!("Failed to reconnect (attempt {}): {}", retry_count, reconnect_err.display_chain());
+                                }
+                            }
+                        },
+                        ErrorKind::RpcError(code, src, request) => {
+                            warn!("RpcError error, reconnecting to satsnet (attempt {}): method: {} - error:{}, code: {}, src: {}, request: {}", retry_count, method, e.display_chain(), code, src, request);
                             self.signal.wait(Duration::from_secs(3), false)?;
                             let mut conn = self.conn.lock().unwrap();
                             match conn.reconnect() {
@@ -436,8 +453,17 @@ impl Daemon {
                             }
                         },
                         _ => {
-                            warn!("Connection error, reconnecting to satsnet (attempt {}): {} - {}", retry_count, method, e.display_chain());
-                            std::thread::sleep(Duration::from_secs(1));
+                            warn!("Connection error, reconnecting to satsnet (attempt {}): method: {} - error: {}", 
+                                retry_count, method, e.display_chain());
+                            self.signal.wait(Duration::from_secs(3), false)?;
+                            let mut conn = self.conn.lock().unwrap();
+                            match conn.reconnect() {
+                                Ok(new_conn) => *conn = new_conn,
+                                Err(reconnect_err) => {
+                                    error!("Failed to reconnect (attempt {}): {}", retry_count, reconnect_err.display_chain());
+                                }
+                            }
+                            // std::thread::sleep(Duration::from_secs(1));
                         }
                     }
                 }
