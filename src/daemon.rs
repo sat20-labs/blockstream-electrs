@@ -415,16 +415,32 @@ impl Daemon {
     }
 
     fn retry_request(&self, method: &str, params: &Value) -> Result<Value> {
+        let mut retry_count = 0;
         loop {
             match self.handle_request(method, &params) {
-                Err(e @ Error(ErrorKind::Connection(_), _)) => {
-                    warn!("reconnecting to satsnet: {}", e.display_chain());
-                    self.signal.wait(Duration::from_secs(3), false)?;
-                    let mut conn = self.conn.lock().unwrap();
-                    *conn = conn.reconnect()?;
-                    continue;
+                Ok(result) => return Ok(result),
+                Err(e) => {
+                    retry_count += 1;
+                    // error!("Request failed (attempt {}): {} - {}", retry_count, method, e.display_chain());
+                    
+                    match e.kind() {
+                        ErrorKind::Connection(_) => {
+                            warn!("Connection error, reconnecting to satsnet (attempt {}): {} - {}", retry_count, method, e.display_chain());
+                            self.signal.wait(Duration::from_secs(3), false)?;
+                            let mut conn = self.conn.lock().unwrap();
+                            match conn.reconnect() {
+                                Ok(new_conn) => *conn = new_conn,
+                                Err(reconnect_err) => {
+                                    error!("Failed to reconnect (attempt {}): {}", retry_count, reconnect_err.display_chain());
+                                }
+                            }
+                        },
+                        _ => {
+                            warn!("Connection error, reconnecting to satsnet (attempt {}): {} - {}", retry_count, method, e.display_chain());
+                            std::thread::sleep(Duration::from_secs(1));
+                        }
+                    }
                 }
-                result => return result,
             }
         }
     }
