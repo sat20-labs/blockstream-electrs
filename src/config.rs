@@ -18,7 +18,7 @@ pub struct Config {
     pub network_type: Network,
     pub db_path: PathBuf,
     pub daemon_rpc_addr: String,
-    pub daemon_cert_path: Option<PathBuf>,
+    // pub daemon_cert_path: Option<PathBuf>,
     pub daemon_parallelism: usize,
     pub cookie: Option<String>,
     pub electrum_rpc_addr: SocketAddr,
@@ -108,12 +108,12 @@ impl Config {
                     .help("Bitcoin daemon JSONRPC 'addr:port' to connect (default: 127.0.0.1:8332 for mainnet, 127.0.0.1:18332 for testnet and 127.0.0.1:18443 for regtest)")
                     .takes_value(true),
             )
-            .arg(
-                Arg::with_name("daemon_cert_path")
-                    .long("daemon-cert-path")
-                    .help("Path to the satsnet daemon TLS certificate")
-                    .takes_value(true)
-            )
+            // .arg(
+            //     Arg::with_name("daemon_cert_path")
+            //         .long("daemon-cert-path")
+            //         .help("Path to the satsnet daemon TLS certificate")
+            //         .takes_value(true)
+            // )
             .arg(
                 Arg::with_name("daemon_parallelism")
                     .long("daemon-parallelism")
@@ -236,7 +236,7 @@ impl Config {
         .map(String::from)
         .unwrap_or_else(|| format!("127.0.0.1:{}", default_daemon_port));
 
-        let daemon_cert_path = m.value_of("daemon_cert_path").map(PathBuf::from);
+        // let daemon_cert_path = m.value_of("daemon_cert_path").map(PathBuf::from);
 
         let electrum_rpc_addr: SocketAddr = str_to_socketaddr(
             m.value_of("electrum_rpc_addr")
@@ -278,7 +278,7 @@ impl Config {
             network_type,
             db_path,
             daemon_rpc_addr,
-            daemon_cert_path,
+            // daemon_cert_path,
             daemon_parallelism: value_t_or_exit!(m, "daemon_parallelism", usize),
             cookie,
             utxos_limit: value_t_or_exit!(m, "utxos_limit", usize),

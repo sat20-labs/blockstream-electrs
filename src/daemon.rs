@@ -1,12 +1,12 @@
 use std::cell::OnceCell;
 use std::collections::{HashMap, HashSet};
 
-use std::fs;
-use std::io::Read;
+// use std::fs;
+// use std::io::Read;
 use std::fmt;
 
 use std::env;
-use std::path::PathBuf;
+// use std::path::PathBuf;
 use std::str::FromStr;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -26,7 +26,7 @@ use crate::util::{HeaderList, DEFAULT_BLOCKHASH};
 use crate::errors::*;
 
 use log::{debug, info, warn};
-use openssl::x509::X509;
+// use openssl::x509::X509;
 
 use reqwest::blocking::{Client, Response};
 use reqwest::header::AUTHORIZATION;
@@ -186,23 +186,23 @@ struct Connection {
     client: Client,
     cookie_getter: Arc<dyn CookieGetter>,
     url: String,
-    cert_path: Option<PathBuf>,
+    // cert_path: Option<PathBuf>,
     signal: Waiter,
 }
 
 impl Connection {
     fn new(
         url: String,
-        cert_path: Option<PathBuf>,
+        // cert_path: Option<PathBuf>,
         cookie_getter: Arc<dyn CookieGetter>,
         signal: Waiter,
     ) -> Result<Connection> {
-        if let Some(ref path) = cert_path {
-            validate_cert_path(path)?;
-        }
+        // if let Some(ref path) = cert_path {
+        //     validate_cert_path(path)?;
+        // }
 
         let client = Client::builder()
-            .danger_accept_invalid_certs(cert_path.is_some())
+            // .danger_accept_invalid_certs(cert_path.is_some())
             .build()
             .chain_err(|| "Failed to build client")?;
 
@@ -210,7 +210,7 @@ impl Connection {
             client,
             cookie_getter,
             url,
-            cert_path,
+            // cert_path,
             signal,
         })
     }
@@ -218,7 +218,7 @@ impl Connection {
     fn reconnect(&self) -> Result<Connection> {
         Connection::new(
             self.url.clone(),
-            self.cert_path.clone(),
+            // self.cert_path.clone(),
             self.cookie_getter.clone(),
             self.signal.clone(),
         )
@@ -297,7 +297,7 @@ pub struct Daemon {
 impl Daemon {
     pub fn new(
         daemon_rpc_url: String,
-        daemon_cert_path: Option<PathBuf>,
+        // daemon_cert_path: Option<PathBuf>,
         daemon_parallelism: usize,
         cookie_getter: Arc<dyn CookieGetter>,
         network: Network,
@@ -308,7 +308,7 @@ impl Daemon {
             network,
             conn: Mutex::new(Connection::new(
                 daemon_rpc_url.clone(),
-                daemon_cert_path,
+                // daemon_cert_path,
                 cookie_getter,
                 signal.clone(),
             )?),
@@ -764,12 +764,12 @@ impl Daemon {
     }
 }
 
-fn validate_cert_path(cert_path: &PathBuf) -> Result<()> {
-    let mut file = fs::File::open(cert_path).chain_err(|| "Failed to open cert file")?;
-    let mut buffer = Vec::new();
-    file.read_to_end(&mut buffer)
-        .chain_err(|| "Failed to read cert file")?;
-    X509::from_pem(&buffer).chain_err(|| "Invalid certificate")?;
+// fn validate_cert_path(cert_path: &PathBuf) -> Result<()> {
+//     let mut file = fs::File::open(cert_path).chain_err(|| "Failed to open cert file")?;
+//     let mut buffer = Vec::new();
+//     file.read_to_end(&mut buffer)
+//         .chain_err(|| "Failed to read cert file")?;
+//     X509::from_pem(&buffer).chain_err(|| "Invalid certificate")?;
 
-    Ok(())
-}
+//     Ok(())
+// }

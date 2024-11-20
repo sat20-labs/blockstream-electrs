@@ -29,8 +29,8 @@ fn main() {
 
     let daemon = Arc::new(
         Daemon::new(
-            format!("https://{}", config.daemon_rpc_addr),
-            config.daemon_cert_path.clone(),
+            format!("http://{}", config.daemon_rpc_addr),
+            // config.daemon_cert_path.clone(),
             config.daemon_parallelism,
             config.cookie_getter(),
             config.network_type,
