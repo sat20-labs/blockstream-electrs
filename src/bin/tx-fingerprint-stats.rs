@@ -8,8 +8,8 @@ fn main() {
     use std::collections::HashSet;
     use std::sync::Arc;
 
-    use satsnet::blockdata::script::ScriptBuf;
-    use satsnet::consensus::encode::deserialize;
+    use bitcoin::blockdata::script::ScriptBuf;
+    use bitcoin::consensus::encode::deserialize;
     use electrs::{
         chain::Transaction,
         config::Config,

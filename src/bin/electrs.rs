@@ -27,6 +27,11 @@ fn run_server(config: Arc<Config>) -> Result<()> {
     let metrics = Metrics::new(config.monitoring_addr);
     metrics.start();
 
+    // use electrs::chain::genesis_hash;
+    // use electrs::chain::Network;
+    // let genesis_hash = genesis_hash(Network::Satstestnet);
+    // error!("genesis hash: {}", genesis_hash);
+    
     let daemon = Arc::new(Daemon::new(
         format!("http://{}", config.daemon_rpc_addr),
         // config.daemon_cert_path.clone(),

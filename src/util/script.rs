@@ -12,16 +12,16 @@ pub trait ScriptToAsm: std::fmt::Debug {
         (&asm[7..asm.len() - 1]).to_string()
     }
 }
-impl ScriptToAsm for satsnet::ScriptBuf {}
+impl ScriptToAsm for bitcoin::ScriptBuf {}
 
 pub trait ScriptToAddr {
     fn to_address_str(&self, network: Network) -> Option<String>;
 }
 
-impl ScriptToAddr for satsnet::Script {
+impl ScriptToAddr for bitcoin::Script {
     fn to_address_str(&self, network: Network) -> Option<String> {
-        let satsnet_network: satsnet::Network = network.into();
-        satsnet::Address::from_script(self, satsnet_network).map(|s| s.to_string()).ok()
+        let network: bitcoin::Network = network.into();
+        bitcoin::Address::from_script(self, network).map(|s| s.to_string()).ok()
     }
 }
 

@@ -1,12 +1,12 @@
-use satsnet::hashes::sha256d::Hash as Sha256dHash;
-use satsnet::merkle_tree::MerkleBlock;
-use satsnet::VarInt;
+use bitcoin::hashes::sha256d::Hash as Sha256dHash;
+use bitcoin::merkle_tree::MerkleBlock;
+use bitcoin::VarInt;
 use crypto::digest::Digest;
 use crypto::sha2::Sha256;
 
 use itertools::Itertools;
 use rayon::prelude::*;
-use satsnet::consensus::encode::{deserialize, serialize};
+use bitcoin::consensus::encode::{deserialize, serialize};
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::path::Path;
 use std::str::FromStr;
@@ -1524,7 +1524,7 @@ pub trait GetAmountVal {
     fn amount_value(self) -> u64;
 }
 
-impl GetAmountVal for satsnet::Amount {
+impl GetAmountVal for bitcoin::Amount {
     fn amount_value(self) -> u64 {
         self.to_sat()
     }

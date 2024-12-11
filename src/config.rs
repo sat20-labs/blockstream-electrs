@@ -206,6 +206,8 @@ impl Config {
             Network::Testnet4 => 14827,
             Network::Regtest => 18443,
             Network::Signet => 38332,
+            Network::Satsnet => 4827,
+            Network::Satstestnet => 15827,
         };
         let default_electrum_port = match network_type {
             Network::Bitcoin => 50001,
@@ -213,7 +215,8 @@ impl Config {
             Network::Testnet4 => 60301,
             Network::Regtest => 60401,
             Network::Signet => 60601,
-
+            Network::Satsnet => 50101,
+            Network::Satstestnet => 50301,
         };
         let default_http_port = match network_type {
             Network::Bitcoin => 3000,
@@ -221,7 +224,8 @@ impl Config {
             Network::Testnet4 => 3004,
             Network::Regtest => 3002,
             Network::Signet => 3003,
-
+            Network::Satsnet => 3005,
+            Network::Satstestnet => 3006,
         };
         let default_monitoring_port = match network_type {
             Network::Bitcoin => 4224,
@@ -229,6 +233,8 @@ impl Config {
             Network::Testnet4 => 34224,
             Network::Regtest => 24224,
             Network::Signet => 54224,
+            Network::Satsnet => 5224,
+            Network::Satstestnet => 15224,
         };
 
         let daemon_rpc_addr: String = m

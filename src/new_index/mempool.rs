@@ -1,7 +1,7 @@
 use arraydeque::{ArrayDeque, Wrapping};
 use itertools::{Either, Itertools};
 
-use satsnet::consensus::encode::serialize;
+use bitcoin::consensus::encode::serialize;
 
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::iter::FromIterator;

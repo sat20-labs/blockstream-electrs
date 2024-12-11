@@ -16,7 +16,7 @@ use error_chain::ChainedError;
 use hex::FromHex;
 use rayon::iter::{IndexedParallelIterator, IntoParallelIterator, ParallelIterator};
 use serde_json::{from_str, from_value, Value};
-use satsnet::consensus::encode::{deserialize, serialize_hex};
+use bitcoin::consensus::encode::{deserialize, serialize_hex};
 
 use crate::chain::{Block, BlockHash, BlockHeader, Network, Transaction, Txid};
 use crate::metrics::{HistogramOpts, HistogramVec, Metrics};

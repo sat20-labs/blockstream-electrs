@@ -11,9 +11,9 @@ use crate::util::{
     DEFAULT_BLOCKHASH,
 };
 
-use satsnet::consensus::encode;
+use bitcoin::consensus::encode;
 
-use satsnet::hashes::FromSliceError as HashError;
+use bitcoin::hashes::FromSliceError as HashError;
 use hex::{DisplayHex, FromHex};
 use hyper::service::{make_service_fn, service_fn};
 use hyper::{Body, Method, Response, Server, StatusCode};
@@ -56,7 +56,7 @@ struct BlockValue {
     mediantime: u32,
 
     nonce: u32,
-    bits: satsnet::pow::CompactTarget,
+    bits: bitcoin::pow::CompactTarget,
     difficulty: f64,
 }
 
@@ -1024,8 +1024,8 @@ impl From<hex::HexToArrayError> for HttpError {
         HttpError::from("Invalid hex string".to_string())
     }
 }
-impl From<satsnet::hex::HexToArrayError> for HttpError {
-    fn from(_e: satsnet::hex::HexToArrayError) -> Self {
+impl From<bitcoin::hex::HexToArrayError> for HttpError {
+    fn from(_e: bitcoin::hex::HexToArrayError) -> Self {
         //HttpError::from(e.description().to_string())
         HttpError::from("Invalid Bitcoin address".to_string())
     }

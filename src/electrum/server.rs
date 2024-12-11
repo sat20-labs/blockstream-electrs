@@ -6,14 +6,14 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Instant;
 
-use satsnet::hashes::sha256d::Hash as Sha256dHash;
+use bitcoin::hashes::sha256d::Hash as Sha256dHash;
 use crypto::digest::Digest;
 use crypto::sha2::Sha256;
 use error_chain::ChainedError;
 use hex::{self, DisplayHex};
 use serde_json::{from_str, Value};
 
-use satsnet::consensus::encode::serialize_hex;
+use bitcoin::consensus::encode::serialize_hex;
 
 use crate::chain::Txid;
 use crate::config::{Config, RpcLogging};
