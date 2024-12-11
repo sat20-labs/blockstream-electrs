@@ -69,3 +69,9 @@ See `$ cargo run --release --bin electrs -- --help` for the full list of options
 ## License
 
 MIT
+
+
+## Run
+
+# satstestnet
+electrs -vvvv --cookie q17AIoqBJSEhW7djqjn0nTsZcz4=:nnlkAZn58bqsyYwVtHIajZ16cj8= --db-dir ./data --network satstestnet --daemon-rpc-addr 192.168.10.103:15827 --electrum-rpc-addr 0.0.0.0:60301 --http-addr 0.0.0.0:3004 --jsonrpc-import --cors "*" --address-search --index-unspendables --utxos-limit 5000 --electrum-txs-limit 5000
